@@ -1,0 +1,147 @@
+.register-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: calc(100vh - 72px);
+    padding: 2rem;
+}
+
+.register-header {
+    background-color: var(--background-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 4rem;
+}
+
+.register-header h2 {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.register-header p {
+    max-width: 90%;
+    font-size: 1.2rem;
+}
+
+ul {
+    list-style: none;
+
+}
+
+.list-item::before {
+    content: "\2022";
+    color: var(--accent-color);
+    margin-right: 0.5rem;
+}
+
+.list-item {
+    font-size: 1.2rem;
+    line-height: 1.5rem;
+}
+
+.list-item em {
+    color: var(--accent-color);
+}
+
+.register-form {
+    background-color: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 4rem;
+}
+
+.register-form h2 {
+    font-family: 'Playfair Display', serif;
+    color: var(--primary-color);
+    margin: 0;
+}
+
+.register-form p {
+    color: var(--secondary-color);
+    margin-top: 0;
+    font-size: 1rem;
+}
+
+.input-name-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.input-name-fields div,
+.form-field {
+    display: flex;
+    flex-direction: column;
+}
+
+.register-form label {
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+
+.register-form input {
+    padding: 1rem;
+    border: var(--secondary-color) 1px solid;
+    border-radius: 2px;
+    background-color: rgba(255, 255, 255, 0.05);
+    color: white;
+}
+
+.register-form input::placeholder {
+    color: gray;
+}
+
+input:-webkit-autofill {
+    -webkit-text-fill-color: var(--accent-color);
+    -webkit-box-shadow: 0 0 0 30px var(--bg-secondary) inset;
+}
+
+hr {
+    width: 100%;
+}
+
+.radio-buttons {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: row;
+    gap: 1rem;
+}
+
+.role-btn {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    padding: 2rem;
+    width: 33%;
+    color: var(--primary-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+.role-btn-selected {
+    background: var(--accent-color);
+    color: #fff;
+    border-color: var(--accent-color);
+}
+
+
+.register-form button {
+    padding: 0.75rem 2rem;
+    border: none;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+
+.register-form button:hover {
+    background: var(--accent-color);
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(201, 168, 76, 0.3);
+}

@@ -1,0 +1,239 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String          @id @default(cuid())
+  name             String
+  email            String          @unique
+  password         String
+  role             Role
+  isActive         Boolean         @default(true)
+  isEmailVerified  Boolean         @default(false)
+  twoFactorSecret  String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  twoFactorEnabled Boolean         @default(false)
+  books            Book[]
+  cart             Cart[]
+  payoutRequest    PayoutRequest[]
+  AuthorOrders     PrintingOrder[] @relation("AuthorOrders")
+  VendorOrders     PrintingOrder[] @relation("VendorOrders")
+  purchaseOrders   PurchaseOrder[]
+  tokens           Token[]
+  transactions     Transaction[]
+  vendor           VendorProfile?
+  wallet           Wallet?
+  reviews          Review[]
+  readingProgress  ReadingProgress[]
+}
+
+model Token {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  type      TokenType
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  user      User      @relation(fields: [userId], references: [id])
+}
+
+model Book {
+  id             String          @id @default(cuid())
+  title          String
+  category       String
+  description    String
+  content        String
+  publishType    PublishType?
+  isPublished    Boolean         @default(false)
+  isActive       Boolean         @default(true)
+  thumbnailImg   String
+  coverImg       String
+  price          Float?
+  seoWords       String[]
+  authorId       String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  publishedAt    DateTime?
+  pages          Int?
+  author         User            @relation(fields: [authorId], references: [id])
+  cart           Cart[]
+  printingOrders PrintingOrder[]
+  purchaseOrders PurchaseOrder[]
+  reviews        Review[]
+  readingProgress ReadingProgress[]
+}
+
+model Cart {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  addedAt   DateTime @default(now())
+  addedBook Book     @relation(fields: [bookId], references: [id])
+  cartOwner User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, bookId])
+}
+
+model PurchaseOrder {
+  id              String        @id @default(cuid())
+  userId          String
+  bookId          String
+  totalPrice      Float
+  quantity        Int
+  orderedAt       DateTime      @default(now())
+  paymentStatus   PaymentStatus @default(Pending)
+  shippingAddress String?
+  orderBook       Book          @relation(fields: [bookId], references: [id])
+  orderOwner      User          @relation(fields: [userId], references: [id])
+  transaction     Transaction[]
+}
+
+model PrintingOrder {
+  id              String             @id @default(cuid())
+  authorId        String
+  vendorId        String
+  bookId          String
+  copies          Int
+  pages           Int
+  quotationAmount Float
+  advanceAmount   Float
+  remainingAmount Float
+  shippingAddress String
+  orderedAt       DateTime           @default(now())
+  deliveryStatus  DeliveryStatus     @default(Pending)
+  printStatus     PrintRequestStatus @default(Pending)
+  authorOrder     User               @relation("AuthorOrders", fields: [authorId], references: [id])
+  orderBook       Book               @relation(fields: [bookId], references: [id])
+  vendor          User               @relation("VendorOrders", fields: [vendorId], references: [id])
+  transactions    Transaction[]
+}
+
+model Transaction {
+  id              String         @id @default(cuid())
+  transactionId   String         @unique
+  amount          Float
+  paymentMethod   String
+  createdAt       DateTime       @default(now())
+  printingOrderId String?
+  purchaseOrderId String?
+  userId          String
+  paymentStatus   PaymentStatus
+  printingOrder   PrintingOrder? @relation(fields: [printingOrderId], references: [id])
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+  user            User           @relation(fields: [userId], references: [id])
+}
+
+model VendorProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  companyName String?
+  perPageCost Float
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model PayoutRequest {
+  id            String        @id @default(cuid())
+  userId        String
+  amount        Float
+  paymentStatus PaymentStatus @default(Pending)
+  bankDetails   String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  user          User          @relation(fields: [userId], references: [id])
+}
+
+model Wallet {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  totalBalance   Float    @default(0)
+  totalWithdrawn Float    @default(0)
+  currentBalance Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Review {
+  id        String    @id @default(cuid())
+  rating    Int
+  comment   String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  bookId    String
+  userId    String
+  book      Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ReadingProgress {
+
+  id                  String         @id @default(cuid())
+  bookId              String
+  book                Book           @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  progressPercentage  Float            @default(0)
+  currentPage         Int            @default(1)
+  createdAt           DateTime       @default(now())
+  readingStatus       ReadingStatus  @default(NotStarted)
+  lastReadAt          DateTime?
+  @@unique([userId, bookId])
+}
+
+enum ReadingStatus{
+  NotStarted
+  InProgress
+  Completed
+}
+
+
+enum Role {
+  Author
+  Admin
+  Vendor
+  Reader
+}
+
+enum TokenType {
+  ForgotPassword
+  VerifyEmail
+  TwoFactorVerification
+}
+
+enum PublishType {
+  ONLINE
+  OFFLINE
+}
+
+enum DeliveryStatus {
+  Pending
+  Printing
+  Shipped
+  Delivered
+}
+
+enum PrintRequestStatus {
+  Pending
+  Rejected
+  Accepted
+}
+
+enum PaymentStatus {
+  Pending
+  Paid
+  Rejected
+}
