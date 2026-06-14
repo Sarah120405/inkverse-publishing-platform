@@ -1,0 +1,237 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lora:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+    --color-bg-primary: #1a1714;
+    --color-bg-secondary: #211e1a;
+    --color-cream: #f5f0e8;
+    --color-cream-dim: #c8c0b0;
+    --color-gold: #c9a84c;
+    --color-gold-light: #e8c96a;
+    --color-brown: #8b7355;
+    --color-brown-light: #a08a6a;
+    --color-border: rgba(201, 168, 76, 0.2);
+
+    --font-playfair: 'Playfair Display', serif;
+    --font-lora: 'Lora', serif;
+}
+
+@layer base {
+    body {
+        background-color: var(--color-bg-primary);
+        color: var(--color-cream);
+        font-family: var(--font-lora);
+        margin: 0;
+    }
+
+    h1, h2, h3 {
+        font-family: var(--font-playfair);
+    }
+
+    button {
+        cursor: pointer;
+        font-family: var(--font-lora);
+        letter-spacing: 0.05em;
+    }
+
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus {
+        -webkit-text-fill-color: var(--color-gold);
+        -webkit-box-shadow: 0 0 0 30px var(--color-bg-secondary) inset;
+    }
+}
+
+/*:root {
+    --background-color: #1a1714;
+    --primary-color: #f5f0e8;
+    --secondary-color: #8b7355;
+    --accent-color: #c9a84c;
+
+    --bg-secondary: #211e1a;
+    --cream-dim: #c8c0b0;
+    --gold-light: #e8c96a;
+    --brown-light: #a08a6a;
+    --border-color: rgba(201, 168, 76, 0.2);
+}
+
+body {
+    margin: 0;
+    font-family: 'Lora', serif;
+    background-color: var(--background-color);
+    color: var(--primary-color);
+}
+
+main {
+    padding-top: 72px;
+}
+
+h1 h2 h3 {
+    font-family: 'Playfair Display', serif;
+}
+
+h1 {
+    font-size: 3.5rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    line-height: 1.1;
+}
+
+h1 em,
+h2 em {
+    color: var(--accent-color);
+    font-style: italic;
+}
+
+button {
+    cursor: pointer;
+    font-family: 'Lora', serif;
+    letter-spacing: 0.05em;
+}
+
+.app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.header {
+    background-color: rgba(26, 23, 20, 0.8);
+    backdrop-filter: blur(10px);
+    border-bottom: var(--accent-color) 1px solid;
+    padding: 1rem;
+    justify-content: space-between;
+    display: flex;
+    align-items: center;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+}
+
+.book-icon {
+    width: 32px;
+    height: 32px;
+    margin-right: 0.5rem;
+    color: var(--accent-color);
+}
+
+.logo div {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.logo div span {
+    color: var(--accent-color);
+}
+
+.header-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.register-button,
+.login-button {
+    background-color: transparent;
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.welcome {
+    min-height: calc(100vh - 72px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background-image: linear-gradient(to right, rgba(22, 17, 17, 0.4), rgba(26, 23, 17, 0)),
+        url('/src/assets/welcome-bg.jpg');
+    background-color: var(--background-color);
+    background-blend-mode: overlay;
+    background-size: cover;
+    background-position: center;
+    padding: 0 4rem;
+
+}
+
+.eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.eyebrow-line {
+    width: 40px;
+    height: 1px;
+    background: var(--accent-color);
+    display: block;
+}
+
+.eyebrow span:last-child {
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent-color);
+    font-family: 'Lora', serif;
+}
+
+.welcome p {
+    max-width: 600px;
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+    color: var(--gold-light);
+}
+
+.welcome-actions {
+    display: flex;
+    flex-direction: row;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.welcome-actions button {
+    padding: 0.75rem 2rem;
+    border: none;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.primary-button {
+    background: var(--accent-color);
+    color: #fff;
+}
+
+.primary-button:hover {
+    background: var(--gold-light);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(201, 168, 76, 0.3);
+}
+
+.secondary-button {
+    background: transparent;
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+}
+
+.secondary-button:hover {
+    background: var(--primary-color);
+    color: var(--background-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(201, 168, 76, 0.3);
+}
+
+.footer {
+    background-color: var(--background-color);
+    padding: 1rem;
+    margin-top: auto;
+    border-top: var(--accent-color) 1px solid;
+    position: relative;
+    bottom: 0;
+    left: 0;
+    right: 0;
+}
+*/
