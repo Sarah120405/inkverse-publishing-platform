@@ -174,7 +174,7 @@ function AuthorDashboard() {
                             <span className="text-gold hover:text-gold-light transition-colors text-sm font-semibold flex items-center justify-center gap-1 mt-2 cursor-pointer">View all books <FaArrowRight /></span>
                         </Link>
                     </div>
-                    <div className="bg-bg-secondary/40 border border-border/40 p-3 rounded-xl">
+                    <div className="flex flex-col justify-evenly bg-bg-secondary/40 border border-border/40 p-3 h-full rounded-xl">
                         {/* Recent Activity */}
                         <div className="flex justify-between items-center">
                             <div className="flex items-center gap-2">

@@ -174,6 +174,7 @@ const dashboardService = async (userId) => {
                 earnings: wallet,
                 salesData: salesData,
                 totalRevenue: totalRevenue,
+                // totalReaders: totalReaders,
                 topSeller: topSeller,
                 recentActivity: recentActivity,
                 recentReviews: recentReviews
@@ -181,7 +182,17 @@ const dashboardService = async (userId) => {
             return response(200, true, "Author dashboard data retrieved successfully", { dashboardData }, null);
         }
         else if (user.role === 'Reader') {
-            const orders = await prisma.purchaseOrder.findMany({ where: { userId: userId, paymentStatus: 'Paid' }, include: { orderBook: true } });
+            const orders = await prisma.purchaseOrder.findMany({
+                where: { userId: userId, paymentStatus: 'Paid' },
+                include: {
+                    orderBook: {
+                        include: {
+                            author: true,
+                            reviews: true
+                        }
+                    }
+                }
+            });
 
             const totalSpent = orders.reduce((sum, order) => sum + order.totalPrice, 0);
 
@@ -213,12 +224,22 @@ const dashboardService = async (userId) => {
                 take: 3
             });
 
+            const allReadingProgress = await prisma.readingProgress.findMany({
+                where: { userId: userId },
+                include: {
+                    book: {
+                        include: {
+                            author: true
+                        }
+                    }
+                }
+            });
 
             const recommendedBooks = await prisma.book.findMany({
                 where: {
                     isPublished: true,
                     id: {
-                        notIn: orders.map((order) => order.bookId)
+                        notIn: orders.map((order) => order.orderBook.id)
                     }
                 },
                 take: 4,
@@ -260,10 +281,11 @@ const dashboardService = async (userId) => {
                 exploredCategories: setCategories.size,
                 readingBooksCount: continueReading.length,
                 continueReading: continueReading,
+                completedBooks: completedBooks,
                 recommendedBooks: recommendedBooks,
                 readingHistory: readingHistory,
                 readingGoal: readingGoal,
-                readingGoal
+                allReadingProgress: allReadingProgress
             }
             return response(200, true, "Reader dashboard data retrieved successfully", { dashboardData }, null);
         }

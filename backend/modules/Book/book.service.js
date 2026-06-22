@@ -80,6 +80,10 @@ const getMyBooks = async (authorId, page, limit) => {
             where: {
                 authorId: authorId
             },
+            include: {
+                reviews: true,
+                author: true
+            },
             skip: skip,
             take: parseInt(limit)
         });
@@ -92,6 +96,7 @@ const getMyBooks = async (authorId, page, limit) => {
             page: parseInt(page),
             limit: parseInt(limit),
             totalItems: count,
+            currentPageItems: books.length,
             totalPages: Math.ceil(count / parseInt(limit)),
             hasNextPage: parseInt(page) < Math.ceil(count / parseInt(limit)),
             hasPrevPage: parseInt(page) > 1

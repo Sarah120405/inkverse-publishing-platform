@@ -49,20 +49,13 @@ function Sidebar({ role, handleLogout, openSidebar, setOpenSidebar }) {
                     {role === 'Author' && (
                         <>
                             <li>
-                                <NavLink to="/books" className={getNavLinkClass}>
-                                    <FaBookOpen className="text-lg min-w-[20px]" />
-                                    <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">My Books</span>
-                                </NavLink>
-
-                            </li>
-                            <li>
-                                <NavLink to="/my-books" className={getNavLinkClass}>
+                                <NavLink to="/dashboard/author/my-books" className={getNavLinkClass}>
                                     <FaBookOpen className="text-lg min-w-[20px]" />
                                     <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">My Books</span>
                                 </NavLink>
                             </li>
                             <li>
-                                <NavLink to="/orders-sales" className={getNavLinkClass}>
+                                <NavLink to="/print-orders" className={getNavLinkClass}>
                                     <FaShoppingCart className="text-lg min-w-[20px]" />
                                     <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Orders & Sales</span>
                                 </NavLink>
@@ -74,9 +67,9 @@ function Sidebar({ role, handleLogout, openSidebar, setOpenSidebar }) {
                                 </NavLink>
                             </li>
                             <li>
-                                <NavLink to="/payout" className={getNavLinkClass}>
-                                    <FaCreditCard className="text-lg min-w-[20px]" />
-                                    <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Payout</span>
+                                <NavLink to="/dashboard/author/books/create" className={getNavLinkClass}>
+                                    <FaMoneyBill className="text-lg min-w-[20px]" />
+                                    <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Create Book</span>
                                 </NavLink>
                             </li>
                         </>
@@ -97,15 +90,9 @@ function Sidebar({ role, handleLogout, openSidebar, setOpenSidebar }) {
                                 </NavLink>
                             </li>
                             <li>
-                                <NavLink to="/dashboard/reader/reading-history" className={getNavLinkClass}>
+                                <NavLink to="/dashboard/reader/reading" className={getNavLinkClass}>
                                     <FaCreditCard className="text-lg min-w-[20px]" />
                                     <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Reading History</span>
-                                </NavLink>
-                            </li>
-                            <li>
-                                <NavLink to="/dashboard/reader/reviews" className={getNavLinkClass}>
-                                    <FaMoneyBill className="text-lg min-w-[20px]" />
-                                    <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Reviews</span>
                                 </NavLink>
                             </li>
                         </>
@@ -132,7 +119,7 @@ function Sidebar({ role, handleLogout, openSidebar, setOpenSidebar }) {
                 </ul>
 
                 {/* Promo Card Banner (Hidden when shrunk on desktop) */}
-                <div className='bg-bg-secondary/80 border border-border px-6 py-3 rounded-lg mx-4 text-left relative overflow-hidden mt-8 flex items-center justify-between lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:flex'>
+                <div className='bg-bg-secondary/80 border border-border px-6 py-3 rounded-lg mx-4 text-left relative overflow-hidden flex items-center justify-between lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:flex'>
                     <div>
                         <h1 className='text-2xl font-playfair font-bold text-gold relative z-10 mb-2 tracking-tight'>{role === 'Author' ? 'Create. Publish. Inspire.' : (role === 'Reader' ? 'Dive into endless stories' : 'Sell. Deliver. Grow.')}</h1>
                         <p className='text-[12px] text-cream-dim uppercase tracking-normal font-sans relative z-10'>{role === 'Author' ? 'Join our community of storytellers' : (role === 'Reader' ? 'Discover new worlds with every page' : 'Sell. Deliver. Grow.')} </p>

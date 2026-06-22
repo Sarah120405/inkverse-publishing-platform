@@ -12,6 +12,10 @@ import { PublishedBooks } from '../Dashboards/Books/PublishedBooks';
 import BookDetail from '../Dashboards/Books/BookDetail';
 import { Cart } from '../Dashboards/Orders/Cart';
 import CheckoutPage from '../Dashboards/Orders/CheckoutPage';
+import { ReaderLibrary } from '../Dashboards/Books/ReaderLibrary';
+
+import { AuthorBooks } from '../Dashboards/Books/AuthorBooks';
+import CreateBook from '../Dashboards/Books/CreateBook';
 function NavRoutes() {
     return (
         <Routes>
@@ -30,6 +34,7 @@ function NavRoutes() {
                 <Route path="/dashboard/reader/published-books/:bookId" element={<BookDetail />} />
                 <Route path="/dashboard/reader/cart" element={<Cart />} />
                 <Route path='/dashboard/reader/order' element={<CheckoutPage />} />
+                <Route path='/dashboard/reader/reading' element={<ReaderLibrary />} />
             </Route>
 
 
@@ -40,6 +45,13 @@ function NavRoutes() {
                 </ProtectedRoutes>
             }>
                 <Route index element={<AuthorDashboard />} />
+                <Route path='/dashboard/author/my-books' element={<AuthorBooks />} />
+                <Route path="/dashboard/author/published-books/:bookId" element={<BookDetail />} />
+                <Route path='/dashboard/author/books/create' element={<CreateBook />} />
+
+                {/* <Route path='/dashboard/author/books/create' element={<CreateAuthorBooks />} />
+                <Route path='/dashboard/author/print-orders' element={<AuthorPrintOrders />} />
+                <Route path='/dashboard/author/earnings' element={<AuthorEarnings />} /> */}
             </Route>
 
             {/* Vendor dashboard paths */}
