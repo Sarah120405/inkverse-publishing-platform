@@ -1,7 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
     FaBookOpen, FaStore, FaShoppingCart, FaMoneyBill, FaCreditCard, FaUser,
-    FaCog, FaFeatherAlt
+    FaCog, FaFeatherAlt,
+    FaPen
 } from 'react-icons/fa';
 import { Logo } from '../../CommonComponents/logo';
 
@@ -55,6 +56,12 @@ function Sidebar({ role, handleLogout, openSidebar, setOpenSidebar }) {
                                 </NavLink>
                             </li>
                             <li>
+                                <NavLink to="/dashboard/author/books/create" className={getNavLinkClass}>
+                                    <FaPen className="text-lg min-w-[20px]" />
+                                    <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Create Book</span>
+                                </NavLink>
+                            </li>
+                            <li>
                                 <NavLink to="/print-orders" className={getNavLinkClass}>
                                     <FaShoppingCart className="text-lg min-w-[20px]" />
                                     <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Orders & Sales</span>
@@ -66,12 +73,7 @@ function Sidebar({ role, handleLogout, openSidebar, setOpenSidebar }) {
                                     <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Earnings</span>
                                 </NavLink>
                             </li>
-                            <li>
-                                <NavLink to="/dashboard/author/books/create" className={getNavLinkClass}>
-                                    <FaMoneyBill className="text-lg min-w-[20px]" />
-                                    <span className="lg:opacity-0 lg:group-hover:opacity-100 transition-opacity duration-300 lg:hidden lg:group-hover:inline ml-2">Create Book</span>
-                                </NavLink>
-                            </li>
+
                         </>
                     )}
 

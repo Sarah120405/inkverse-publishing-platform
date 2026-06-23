@@ -49,8 +49,8 @@ function NavRoutes() {
                 <Route path="/dashboard/author/published-books/:bookId" element={<BookDetail />} />
                 <Route path='/dashboard/author/books/create' element={<CreateBook />} />
 
-                {/* <Route path='/dashboard/author/books/create' element={<CreateAuthorBooks />} />
-                <Route path='/dashboard/author/print-orders' element={<AuthorPrintOrders />} />
+                <Route path='/dashboard/author/books/edit/:bookId' element={<CreateBook />} />
+                {/* <Route path='/dashboard/author/print-orders' element={<AuthorPrintOrders />} />
                 <Route path='/dashboard/author/earnings' element={<AuthorEarnings />} /> */}
             </Route>
 

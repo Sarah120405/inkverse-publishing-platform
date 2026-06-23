@@ -62,6 +62,31 @@ const getHeaderContent = (pathname, role, name) => {
         };
     }
 
+    // 6. Create Book Page
+    if (pathname === `/dashboard/${rolePath}/books/create`) {
+        return {
+            title: "Create New Book",
+            subtitle: "Bring your story to life. Add your book details and publish it for the world to read."
+        };
+    }
+
+    // 7. Edit Book Page
+    if (pathname.startsWith(`/dashboard/${rolePath}/books/edit/`)) {
+        return {
+            title: "Edit Book",
+            subtitle: "Update your book details and refine your manuscript."
+        };
+    }
+
+    // 8. Earnings & Wallet Page (Option A)
+    /* if (pathname === `/dashboard/${rolePath}/earnings`) {
+        return {
+            title: "Earnings & Wallet",
+            subtitle: "Track your earnings, view transactions, and manage your payouts."
+        };
+    } */
+
+
     // Default Fallback
     return {
         title: "Inkverse Platform",

@@ -6,7 +6,7 @@ import { bookSchema, updateBookSchema, publishBookSchema, reviewSchema, readingP
 
 const createBookController = async (req, res) => {
 
-    const { error } = bookSchema.validate(req.body);
+    const { error, value } = bookSchema.validate(req.body);
     if (error) {
         return res.status(400).json({ error: error.details[0].message });
     }
@@ -16,24 +16,24 @@ const createBookController = async (req, res) => {
             message: "Both Cover Image and Thumbnail are required"
         });
     }
-    req.body.coverImg = req.files['coverImg'][0].path;
-    req.body.thumbnailImg = req.files['thumbnailImg'][0].path;
-    const book = await createBook(req.body, req.user.id);
+    value.coverImg = req.files['coverImg'][0].path;
+    value.thumbnailImg = req.files['thumbnailImg'][0].path;
+    const book = await createBook(value, req.user.id);
     res.status(book.status).json(book);
 };
 
 const updateBookController = async (req, res) => {
-    const { error } = updateBookSchema.validate(req.body);
+    const { error, value } = updateBookSchema.validate(req.body);
     if (error) {
         return res.status(400).json({ error: error.details[0].message });
     }
     if (req.files && req.files['coverImg']) {
-        req.body.coverImg = req.files['coverImg'][0].path;
+        value.coverImg = req.files['coverImg'][0].path;
     }
     if (req.files && req.files['thumbnailImg']) {
-        req.body.thumbnailImg = req.files['thumbnailImg'][0].path;
+        value.thumbnailImg = req.files['thumbnailImg'][0].path;
     }
-    const { authorId, bookId, ...bookData } = { ...req.body, authorId: req.user.id, bookId: req.params.bookId };
+    const { authorId, bookId, ...bookData } = { ...value, authorId: req.user.id, bookId: req.params.bookId };
     const book = await updateBook(authorId, bookId, bookData);
     res.status(book.status).json(book);
 }
