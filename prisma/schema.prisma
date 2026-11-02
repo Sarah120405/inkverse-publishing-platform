@@ -54,7 +54,8 @@ model Book {
   isActive       Boolean         @default(true)
   thumbnailImg   String
   coverImg       String
-  price          Float?
+  price          Decimal?        @db.Decimal(12, 2)
+  metaData       Json?           @db.JsonB
   seoWords       String[]
   authorId       String
   createdAt      DateTime        @default(now())
@@ -84,7 +85,7 @@ model PurchaseOrder {
   id              String        @id @default(cuid())
   userId          String
   bookId          String
-  totalPrice      Float
+  totalPrice      Decimal       @db.Decimal(12, 2)
   quantity        Int
   orderedAt       DateTime      @default(now())
   paymentStatus   PaymentStatus @default(Pending)
@@ -101,9 +102,9 @@ model PrintingOrder {
   bookId          String
   copies          Int
   pages           Int
-  quotationAmount Float
-  advanceAmount   Float
-  remainingAmount Float
+  quotationAmount Decimal            @db.Decimal(12, 2)
+  advanceAmount   Decimal            @db.Decimal(12, 2)
+  remainingAmount Decimal            @db.Decimal(12, 2)
   shippingAddress String
   orderedAt       DateTime           @default(now())
   deliveryStatus  DeliveryStatus     @default(Pending)
@@ -117,7 +118,7 @@ model PrintingOrder {
 model Transaction {
   id              String         @id @default(cuid())
   transactionId   String         @unique
-  amount          Float
+  amount          Decimal        @db.Decimal(12, 2)
   paymentMethod   String
   createdAt       DateTime       @default(now())
   printingOrderId String?
@@ -133,7 +134,7 @@ model VendorProfile {
   id          String   @id @default(cuid())
   userId      String   @unique
   companyName String?
-  perPageCost Float
+  perPageCost Decimal  @db.Decimal(12, 2)
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
 }
@@ -141,7 +142,7 @@ model VendorProfile {
 model PayoutRequest {
   id            String        @id @default(cuid())
   userId        String
-  amount        Float
+  amount        Decimal       @db.Decimal(12, 2)
   paymentStatus PaymentStatus @default(Pending)
   bankDetails   String
   createdAt     DateTime      @default(now())
@@ -152,9 +153,9 @@ model PayoutRequest {
 model Wallet {
   id             String   @id @default(cuid())
   userId         String   @unique
-  totalBalance   Float    @default(0)
-  totalWithdrawn Float    @default(0)
-  currentBalance Float    @default(0)
+  totalBalance   Decimal  @default(0)     @db.Decimal(12, 2)
+  totalWithdrawn Decimal  @default(0)     @db.Decimal(12, 2)
+  currentBalance Decimal  @default(0)     @db.Decimal(12, 2)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   user           User     @relation(fields: [userId], references: [id])
