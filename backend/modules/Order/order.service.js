@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "../../config/db.config.js";
 import response from "../../utils/response.js";
 import { removeFromCart } from "../Cart/cart.service.js";
-
+import { createAuditLog } from "../../utils/auditLog.js";
 const createOrder = async (bookId, userId, body) => {
   try {
     const book = await prisma.book.findUnique({ where: { id: bookId } });
@@ -70,7 +70,10 @@ const createOrder = async (bookId, userId, body) => {
           where: { userId: userId },
         });
 
-        if (!authorWallet || authorWallet.currentBalance < totalAmount) {
+        if (
+          !authorWallet ||
+          authorWallet.currentBalance.lessThan(totalAmount)
+        ) {
           throw new Error("INSUFFICIENT_BALANCE");
         }
 
@@ -98,7 +101,7 @@ const createOrder = async (bookId, userId, body) => {
           orderBy: { createdAt: "asc" },
         });
         if (!admin) throw new Error("Platform Admin not found");
-        const setting = await prisma.setting.findUnique({
+        const setting = await tx.setting.findUnique({
           where: { key: "commission_rate" },
         });
         const commissionRate = new Prisma.Decimal(
@@ -106,6 +109,7 @@ const createOrder = async (bookId, userId, body) => {
         );
         const commisionAmount = totalAmount.mul(commissionRate);
         const authorAmount = totalAmount.minus(commisionAmount);
+
         const updateAuthorWallet = await tx.wallet.update({
           where: { userId: book.authorId },
           data: {
@@ -120,11 +124,75 @@ const createOrder = async (bookId, userId, body) => {
             currentBalance: { increment: commisionAmount },
           },
         });
+        console.log("Author Wallet Updated:", updateAuthorWallet);
+        await createAuditLog(tx, {
+          userId: userId,
+          action: "AUTHOR_WALLET_CREDITED",
+          entityType: "Wallet",
+          entityId: updateAuthorWallet.id,
+          oldValue: {
+            totalBalance: updateAuthorWallet.totalBalance
+              .minus(authorAmount)
+              .toString(),
+            currentBalance: updateAuthorWallet.currentBalance
+              .minus(authorAmount)
+              .toString(),
+          },
+          newValue: {
+            totalBalance: updateAuthorWallet.totalBalance.toString(),
+            currentBalance: updateAuthorWallet.currentBalance.toString(),
+          },
+        });
+        await createAuditLog(tx, {
+          userId,
+          action: "ADMIN_WALLET_CREDITED",
+          entityType: "Wallet",
+          entityId: updateAdminWallet.id,
+          oldValue: {
+            totalBalance: updateAdminWallet.totalBalance
+              .minus(commisionAmount)
+              .toString(),
+            currentBalance: updateAdminWallet.currentBalance
+              .minus(commisionAmount)
+              .toString(),
+          },
+          newValue: {
+            totalBalance: updateAdminWallet.totalBalance.toString(),
+            currentBalance: updateAdminWallet.currentBalance.toString(),
+          },
+        });
       }
 
       let purchaseOrder = await tx.purchaseOrder.create({
         data: data,
       });
+
+      await createAuditLog(tx, {
+        userId,
+        action: "PURCHASE_ORDER_CREATED",
+        entityType: "PurchaseOrder",
+        entityId: purchaseOrder.id,
+        newValue: {
+          totalPrice: purchaseOrder.totalPrice.toString(),
+          paymentStatus: purchaseOrder.paymentStatus,
+        },
+      });
+      if (printingOrder) {
+        await createAuditLog(tx, {
+          userId,
+          action: "PRINTING_ORDER_CREATED",
+          entityType: "PrintingOrder",
+          entityId: printingOrder.id,
+          oldValue: Prisma.JsonNull,
+          newValue: {
+            quotationAmount: printingOrder.quotationAmount.toString(),
+            advanceAmount: printingOrder.advanceAmount.toString(),
+            remainingAmount: printingOrder.remainingAmount.toString(),
+            printStatus: printingOrder.printStatus,
+            deliveryStatus: printingOrder.deliveryStatus,
+          },
+        });
+      }
 
       const payment = await tx.transaction.create({
         data: {
@@ -139,6 +207,20 @@ const createOrder = async (bookId, userId, body) => {
           }),
         },
       });
+
+      await createAuditLog(tx, {
+        userId,
+        action: "PAYMENT_TRANSACTION_CREATED",
+        entityType: "Transaction",
+        entityId: payment.id,
+        oldValue: Prisma.JsonNull,
+        newValue: {
+          amount: payment.amount.toString(),
+          paymentMethod: payment.paymentMethod,
+          paymentStatus: payment.paymentStatus,
+        },
+      });
+
       return {
         payment,
         purchaseOrder,

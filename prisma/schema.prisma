@@ -31,6 +31,7 @@ model User {
   wallet           Wallet?
   reviews          Review[]
   readingProgress  ReadingProgress[]
+  auditLog         AuditLog[]
 }
 
 model Token {
@@ -93,6 +94,8 @@ model PurchaseOrder {
   orderBook       Book          @relation(fields: [bookId], references: [id])
   orderOwner      User          @relation(fields: [userId], references: [id])
   transaction     Transaction[]
+
+  @@index([userId, orderedAt])
 }
 
 model PrintingOrder {
@@ -193,6 +196,25 @@ model ReadingProgress {
   readingStatus       ReadingStatus  @default(NotStarted)
   lastReadAt          DateTime?
   @@unique([userId, bookId])
+}
+
+model AuditLog {
+  id                  String         @id @default(cuid())
+  userId              String
+  action              String
+
+  entityType          String
+  entityId            String
+
+  oldValue            Json?
+  newValue            Json?
+
+  ipAddress           String?
+  createdAt           DateTime        @default(now())
+
+  user                User            @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
 }
 
 enum ReadingStatus{
