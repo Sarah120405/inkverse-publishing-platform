@@ -131,6 +131,11 @@ model Transaction {
   printingOrder   PrintingOrder? @relation(fields: [printingOrderId], references: [id])
   purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
   user            User           @relation(fields: [userId], references: [id])
+
+  stripePaymentIntentId   String?     @unique
+  currency                String?     @default("inr")
+  stripeStatus            String?
+  
 }
 
 model VendorProfile {

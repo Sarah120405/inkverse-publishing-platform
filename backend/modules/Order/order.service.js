@@ -1,9 +1,399 @@
 import { Prisma } from "@prisma/client";
 import prisma from "../../config/db.config.js";
 import response from "../../utils/response.js";
-import { removeFromCart } from "../Cart/cart.service.js";
 import { createAuditLog } from "../../utils/auditLog.js";
+import stripe from "../../config/stripe.config.js";
+import { randomUUID } from "crypto";
+
+const createOnlineOrder = async (book, bookId, userId, body) => {
+  const quantity = Number(body.quantity);
+
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+    return response(400, false, "Quantity must be a positive integer");
+  }
+
+  if (book.price === null || book.price === undefined) {
+    return response(400, false, "Book price is not configured");
+  }
+
+  const totalPrice = new Prisma.Decimal(book.price.toString()).mul(quantity);
+
+  if (totalPrice.lessThanOrEqualTo(0)) {
+    return response(400, false, "Invalid book price");
+  }
+
+  const amountPaise = totalPrice.mul(100);
+
+  if (
+    !amountPaise.isInteger() ||
+    !Number.isSafeInteger(amountPaise.toNumber())
+  ) {
+    return response(400, false, "Invalid payment amount");
+  }
+
+  // 1. Create a pending transaction in your database.
+  const payment = await prisma.transaction.create({
+    data: {
+      userId,
+      transactionId: `TXN-${randomUUID()}`,
+      amount: totalPrice,
+      paymentMethod: "Stripe",
+      paymentStatus: "Pending",
+      currency: "inr",
+    },
+  });
+
+  // 2. Create the Stripe PaymentIntent.
+  let paymentIntent;
+
+  try {
+    paymentIntent = await stripe.paymentIntents.create(
+      {
+        amount: amountPaise.toNumber(),
+        currency: "inr",
+        automatic_payment_methods: { enabled: true },
+        metadata: {
+          transactionId: payment.transactionId,
+          userId,
+          bookId,
+          quantity: String(quantity),
+        },
+      },
+      {
+        idempotencyKey: `inkverse_order_${payment.transactionId}`,
+      },
+    );
+  } catch (error) {
+    await prisma.transaction.update({
+      where: { id: payment.id },
+      data: {
+        paymentStatus: "Rejected",
+        stripeStatus: "creation_failed",
+      },
+    });
+
+    throw error;
+  }
+
+  // 3. Save the PaymentIntent details and audit log.
+  const updatedPayment = await prisma.$transaction(async (tx) => {
+    const updated = await tx.transaction.update({
+      where: { id: payment.id },
+      data: {
+        stripePaymentIntentId: paymentIntent.id,
+        stripeStatus: paymentIntent.status,
+      },
+    });
+
+    await createAuditLog(tx, {
+      userId,
+      action: "PAYMENT_TRANSACTION_CREATED",
+      entityType: "Transaction",
+      entityId: updated.id,
+      oldValue: Prisma.JsonNull,
+      newValue: {
+        amount: updated.amount.toString(),
+        paymentMethod: updated.paymentMethod,
+        paymentStatus: updated.paymentStatus,
+        stripePaymentIntentId: updated.stripePaymentIntentId,
+      },
+    });
+
+    return updated;
+  });
+
+  // 4. Return the client secret to the frontend.
+  if (!paymentIntent.client_secret) {
+    return response(400, false, "Unable to initiate payment", null, null);
+  }
+
+  return response(
+    200,
+    true,
+    "Payment initiated",
+    {
+      transaction: updatedPayment,
+      clientSecret: paymentIntent.client_secret,
+      book,
+    },
+    null,
+  );
+};
+
 const createOrder = async (bookId, userId, body) => {
+  try {
+    const book = await prisma.book.findUnique({
+      where: { id: bookId },
+    });
+
+    if (!book || !book.isPublished || !book.isActive) {
+      return response(400, false, "Book not found", null, null);
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return response(404, false, "User not found", null, null);
+    }
+
+    // Only block a previous successful purchase.
+    const alreadyOrdered = await prisma.purchaseOrder.findFirst({
+      where: {
+        bookId,
+        userId,
+        paymentStatus: "Paid",
+      },
+    });
+
+    if (alreadyOrdered) {
+      return response(400, false, "Book already purchased", null, null);
+    }
+
+    if (book.publishType === "ONLINE") {
+      return await createOnlineOrder(book, bookId, userId, body);
+    }
+
+    /*  if (book.publishType === "OFFLINE") {
+      return await createOfflineOrder(book, bookId, userId, body);
+    } */
+
+    return response(400, false, "Invalid book type", null, null);
+  } catch (error) {
+    console.error("Create order error:", error);
+    return response(500, false, "Order unsuccessful", null, error);
+  }
+};
+
+const completeOnlineOrder = async (paymentIntent) => {
+  const {
+    transactionId,
+    userId,
+    bookId,
+    quantity: quantityString,
+  } = paymentIntent.metadata;
+
+  if (paymentIntent.status !== "succeeded") {
+    throw new Error("Payment has not succeeded");
+  }
+
+  // 1. Validate Stripe metadata
+  const quantity = Number(quantityString);
+
+  if (
+    !transactionId ||
+    !userId ||
+    !bookId ||
+    !Number.isSafeInteger(quantity) ||
+    quantity <= 0
+  ) {
+    throw new Error("Invalid payment metadata");
+  }
+
+  // 2. Find the transaction
+  const payment = await prisma.transaction.findUnique({
+    where: { transactionId },
+  });
+
+  if (!payment) {
+    throw new Error("Transaction not found");
+  }
+
+  // 3. Verify that this PaymentIntent belongs to this transaction
+  if (
+    payment.userId !== userId ||
+    payment.stripePaymentIntentId !== paymentIntent.id ||
+    payment.paymentMethod !== "Stripe"
+  ) {
+    throw new Error("Payment verification failed");
+  }
+
+  // 4. Validate amount and currency
+  const book = await prisma.book.findUnique({
+    where: { id: bookId },
+  });
+
+  if (!book || !book.isPublished || !book.isActive) {
+    throw new Error("Book is unavailable");
+  }
+
+  if (book.publishType !== "ONLINE" || !book.price) {
+    throw new Error("Invalid online book");
+  }
+
+  const expectedAmount = new Prisma.Decimal(book.price.toString()).mul(
+    quantity,
+  );
+
+  const expectedPaise = expectedAmount.mul(100);
+
+  if (
+    !expectedPaise.isInteger() ||
+    !Number.isSafeInteger(expectedPaise.toNumber()) ||
+    paymentIntent.currency !== "inr" ||
+    paymentIntent.amount_received !== expectedPaise.toNumber() ||
+    !payment.amount.equals(expectedAmount)
+  ) {
+    throw new Error("Payment amount validation failed");
+  }
+
+  // 5. Perform all database updates atomically
+  const result = await prisma.$transaction(async (tx) => {
+    // Prevent duplicate wallet credits if Stripe retries the webhook
+    const updatedPayment = await tx.transaction.updateMany({
+      where: {
+        id: payment.id,
+        paymentStatus: "Pending",
+        stripePaymentIntentId: paymentIntent.id,
+      },
+      data: {
+        paymentStatus: "Paid",
+        stripeStatus: paymentIntent.status,
+      },
+    });
+
+    if (updatedPayment.count !== 1) {
+      // Already processed or no longer pending
+      return { alreadyProcessed: true };
+    }
+
+    // 6. Create the paid PurchaseOrder
+    const purchaseOrder = await tx.purchaseOrder.create({
+      data: {
+        userId,
+        bookId,
+        quantity,
+        totalPrice: expectedAmount,
+        paymentStatus: "Paid",
+      },
+    });
+
+    // 7. Link the PurchaseOrder to the Transaction
+    await tx.transaction.update({
+      where: { id: payment.id },
+      data: {
+        purchaseOrderId: purchaseOrder.id,
+      },
+    });
+
+    const admin = await tx.user.findFirst({
+      where: { role: "Admin" },
+      select: { id: true },
+    });
+
+    if (!admin) {
+      throw new Error("Admin account not found");
+    }
+    // 8. Retrieve commission rate
+    const commissionSetting = await tx.setting.findUnique({
+      where: { key: "commission_rate" },
+    });
+
+    const commissionRate = new Prisma.Decimal(
+      commissionSetting ? commissionSetting.value : "0.1",
+    );
+
+    if (commissionRate.lessThan(0) || commissionRate.greaterThan(1)) {
+      throw new Error("Invalid commission rate");
+    }
+
+    const commission = expectedAmount.mul(commissionRate);
+    const authorAmount = expectedAmount.minus(commission);
+
+    // 9. Find author and admin wallets
+
+    const authorWallet = await tx.wallet.findUnique({
+      where: { userId: book.authorId },
+    });
+
+    const adminWallet = await tx.wallet.findUnique({
+      where: { userId: admin.id },
+    });
+
+    if (!authorWallet || !adminWallet) {
+      throw new Error("Wallet not found");
+    }
+
+    await tx.wallet.update({
+      where: { userId: book.authorId },
+      data: {
+        totalBalance: { increment: authorAmount },
+        currentBalance: { increment: authorAmount },
+      },
+    });
+
+    await tx.wallet.update({
+      where: { userId: admin.id },
+      data: {
+        totalBalance: { increment: commission },
+        currentBalance: { increment: commission },
+      },
+    });
+
+    // 12. Create audit logs
+    await createAuditLog(tx, {
+      userId,
+      action: "ONLINE_ORDER_CREATED",
+      entityType: "PurchaseOrder",
+      entityId: purchaseOrder.id,
+      oldValue: Prisma.JsonNull,
+      newValue: {
+        bookId,
+        quantity,
+        totalPrice: expectedAmount.toString(),
+        paymentStatus: "Paid",
+      },
+    });
+
+    await createAuditLog(tx, {
+      userId,
+      action: "AUTHOR_WALLET_CREDITED",
+      entityType: "Wallet",
+      entityId: authorWallet.id,
+      oldValue: {
+        totalBalance: authorWallet.totalBalance.toString(),
+        currentBalance: authorWallet.currentBalance.toString(),
+      },
+      newValue: {
+        amount: authorAmount.toString(),
+        sourceTransactionId: payment.transactionId,
+      },
+    });
+
+    await createAuditLog(tx, {
+      userId: admin.id,
+      action: "ADMIN_COMMISSION_CREDITED",
+      entityType: "Wallet",
+      entityId: adminWallet.id,
+      oldValue: {
+        totalBalance: adminWallet.totalBalance.toString(),
+        currentBalance: adminWallet.currentBalance.toString(),
+      },
+      newValue: {
+        amount: commission.toString(),
+        sourceTransactionId: payment.transactionId,
+      },
+    });
+    await tx.cart.deleteMany({
+      where: {
+        userId,
+        bookId,
+      },
+    });
+
+    return {
+      alreadyProcessed: false,
+      purchaseOrder,
+      authorAmount: authorAmount.toString(),
+      commission: commission.toString(),
+    };
+  });
+
+  return response(201, true, "Order successful", result, null);
+};
+
+/* const createOrder = async (bookId, userId, body) => {
   try {
     const book = await prisma.book.findUnique({ where: { id: bookId } });
 
@@ -36,10 +426,9 @@ const createOrder = async (bookId, userId, body) => {
     if (!user) {
       return response(404, false, "User not found", null, null);
     }
-    let totalAmount = data.totalPrice,
-      printingOrder = null;
+    let printingOrder = null;
     const transaction = await prisma.$transaction(async (tx) => {
-      if (book.publishType === "OFFLINE") {
+       if (book.publishType === "OFFLINE") {
         if (user.role !== "Author") {
           throw new Error("UNAUTHORIZED");
         }
@@ -95,7 +484,24 @@ const createOrder = async (bookId, userId, body) => {
         if (!printingOrder) {
           throw new Error("Printing Order creation failed");
         }
-      } else {
+        await createAuditLog(tx, {
+          userId,
+          action: "PRINTING_ORDER_CREATED",
+          entityType: "PrintingOrder",
+          entityId: printingOrder.id,
+          oldValue: Prisma.JsonNull,
+          newValue: {
+            quotationAmount: printingOrder.quotationAmount.toString(),
+            advanceAmount: printingOrder.advanceAmount.toString(),
+            remainingAmount: printingOrder.remainingAmount.toString(),
+            printStatus: printingOrder.printStatus,
+            deliveryStatus: printingOrder.deliveryStatus,
+          },
+        });
+      }  
+      if (book.publishType === "ONLINE") {
+        const onlineOrder = await createOnlineOrder(book, bookId, userId, body);
+
         const admin = await tx.user.findFirst({
           where: { role: "Admin" },
           orderBy: { createdAt: "asc" },
@@ -107,8 +513,8 @@ const createOrder = async (bookId, userId, body) => {
         const commissionRate = new Prisma.Decimal(
           setting ? setting.value : 0.1,
         );
-        const commisionAmount = totalAmount.mul(commissionRate);
-        const authorAmount = totalAmount.minus(commisionAmount);
+        const commisionAmount = onlineOrder.totalPrice.mul(commissionRate);
+        const authorAmount = onlineOrder.totalPrice.minus(commisionAmount);
 
         const updateAuthorWallet = await tx.wallet.update({
           where: { userId: book.authorId },
@@ -163,67 +569,9 @@ const createOrder = async (bookId, userId, body) => {
         });
       }
 
-      let purchaseOrder = await tx.purchaseOrder.create({
-        data: data,
-      });
-
-      await createAuditLog(tx, {
-        userId,
-        action: "PURCHASE_ORDER_CREATED",
-        entityType: "PurchaseOrder",
-        entityId: purchaseOrder.id,
-        newValue: {
-          totalPrice: purchaseOrder.totalPrice.toString(),
-          paymentStatus: purchaseOrder.paymentStatus,
-        },
-      });
-      if (printingOrder) {
-        await createAuditLog(tx, {
-          userId,
-          action: "PRINTING_ORDER_CREATED",
-          entityType: "PrintingOrder",
-          entityId: printingOrder.id,
-          oldValue: Prisma.JsonNull,
-          newValue: {
-            quotationAmount: printingOrder.quotationAmount.toString(),
-            advanceAmount: printingOrder.advanceAmount.toString(),
-            remainingAmount: printingOrder.remainingAmount.toString(),
-            printStatus: printingOrder.printStatus,
-            deliveryStatus: printingOrder.deliveryStatus,
-          },
-        });
-      }
-
-      const payment = await tx.transaction.create({
-        data: {
-          userId: userId,
-          purchaseOrderId: purchaseOrder.id,
-          transactionId: `TXN-${Date.now()}`,
-          amount: totalAmount,
-          paymentMethod: body.paymentMethod,
-          paymentStatus: data.paymentStatus,
-          ...(book.publishType === "OFFLINE" && {
-            printingOrderId: printingOrder?.id,
-          }),
-        },
-      });
-
-      await createAuditLog(tx, {
-        userId,
-        action: "PAYMENT_TRANSACTION_CREATED",
-        entityType: "Transaction",
-        entityId: payment.id,
-        oldValue: Prisma.JsonNull,
-        newValue: {
-          amount: payment.amount.toString(),
-          paymentMethod: payment.paymentMethod,
-          paymentStatus: payment.paymentStatus,
-        },
-      });
-
       return {
-        payment,
-        purchaseOrder,
+        payment: onlineOrder.transaction,
+        purchaseOrder: onlineOrder.purchaseOrder,
         ...(printingOrder && { printingOrder }),
       };
     });
@@ -277,7 +625,7 @@ const createOrder = async (bookId, userId, body) => {
     }
     return response(500, false, "Order Unsuccessful", null, error);
   }
-};
+}; */
 
 const getMyOrder = async (id) => {
   try {
@@ -302,4 +650,4 @@ const getMyOrder = async (id) => {
   }
 };
 
-export { createOrder, getMyOrder };
+export { createOrder, getMyOrder, completeOnlineOrder };
