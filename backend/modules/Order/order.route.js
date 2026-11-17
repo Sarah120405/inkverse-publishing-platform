@@ -12,10 +12,6 @@ route.get(
   authorize(["Reader", "Admin", "Author"]),
   getMyOrderController,
 );
-route.post(
-  "/order/:bookId",
-  authorize(["Reader", "Author"]),
-  createOrderController,
-);
+route.post("/order", authorize(["Reader", "Author"]), createOrderController);
 
 export default route;

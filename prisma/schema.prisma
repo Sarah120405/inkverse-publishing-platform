@@ -95,6 +95,10 @@ model PurchaseOrder {
   orderOwner      User          @relation(fields: [userId], references: [id])
   transaction     Transaction[]
 
+  checkoutTransactionId     String?
+  checkoutTransaction       Transaction?  @relation("CheckoutOrders", fields: [checkoutTransactionId], references: [id] )
+
+  @@index([checkoutTransactionId])
   @@index([userId, orderedAt])
 }
 
@@ -135,7 +139,7 @@ model Transaction {
   stripePaymentIntentId   String?     @unique
   currency                String?     @default("inr")
   stripeStatus            String?
-  
+  checkoutOrders          PurchaseOrder[] @relation("CheckoutOrders")
 }
 
 model VendorProfile {

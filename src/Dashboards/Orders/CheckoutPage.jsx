@@ -1,26 +1,169 @@
 import { CreditCard } from "lucide-react";
 import { Fragment, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { FaLock, FaMobileAlt } from "react-icons/fa";
 import api from "../../utils/api";
+import {
+  Elements,
+  PaymentElement,
+  useStripe,
+  useElements,
+} from "@stripe/react-stripe-js";
+import stripePromise from "../../utils/stripe";
 
-const inputClass =
-  "bg-bg-primary/40 border border-border/30 rounded-lg p-2.5 text-cream w-full min-w-0 focus:outline-none focus:border-gold/60";
+const formatINR = (n) =>
+  new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(
+    n,
+  );
+
+function StripePaymentForm() {
+  const stripe = useStripe();
+  const elements = useElements();
+
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [message, setMessage] = useState("");
+  const [paymentSucceeded, setPaymentSucceeded] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!stripe || !elements || isProcessing || paymentSucceeded) return;
+
+    setIsProcessing(true);
+    setMessage("");
+
+    const { error, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: window.location.href,
+      },
+      redirect: "if_required",
+    });
+
+    if (error) {
+      if (error.payment_intent?.status === "succeeded") {
+        setPaymentSucceeded(true);
+      } else {
+        setMessage(error.message || "Payment failed.");
+      }
+
+      setIsProcessing(false);
+      return;
+    }
+
+    if (paymentIntent?.status === "succeeded") {
+      setPaymentSucceeded(true);
+    } else {
+      setMessage(`Your payment is processing. We’ll confirm it shortly.`);
+    }
+
+    setIsProcessing(false);
+  };
+
+  if (paymentSucceeded) {
+    return (
+      <div className="flex flex-col items-center text-center gap-4 py-6">
+        <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+          <span className="text-3xl text-emerald-500">✓</span>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xl font-semibold text-cream">
+            Payment Successful!
+          </h3>
+          <p className="text-sm text-cream-dim">
+            Your payment has been received. Your order is being confirmed.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => (window.location.href = "/dashboard/reader")}
+          className="w-full bg-gold hover:bg-gold-light text-bg-primary py-3 rounded-lg font-semibold"
+        >
+          Go to My Orders
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <PaymentElement
+        options={{
+          layout: {
+            type: "accordion",
+            defaultCollapsed: false,
+            radios: "always",
+            spacedAccordionItems: true,
+          },
+        }}
+      />
+
+      {message && <p className="text-sm text-red-400">{message}</p>}
+
+      <button
+        type="submit"
+        disabled={!stripe || !elements || isProcessing}
+        className="w-full bg-gold hover:bg-gold-light disabled:opacity-50 text-bg-primary py-3 rounded-lg font-semibold"
+      >
+        {isProcessing ? "Processing..." : `Pay Now`}
+      </button>
+      <p className="flex items-center justify-center gap-1.5 text-xs text-cream-dim/60">
+        <FaLock className="shrink-0" /> Payments are processed by Stripe. Card
+        details never reach our servers.
+      </p>
+    </form>
+  );
+}
 
 function CheckoutPage() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const selectItems = location.state?.selectedItems || [];
+  if (!selectItems.length) return <Navigate to="/cart" replace />;
   const navigate = useNavigate();
+  const [paid, setPaid] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const cartKey = [...selectItems].sort().join(",");
+  const [intentFor, setIntentFor] = useState("");
 
   const [activeStep, setactiveStep] = useState("payment");
   const steps = [
-    { id: "payment", number: 1, label: "Payment" },
-    { id: "review", number: 2, label: "Review & Place Order" },
+    { id: "payment", number: 1, label: "Details" },
+    { id: "review", number: 2, label: "Payment" },
   ];
 
-  const [paymentMethod, setPaymentMethod] = useState(1);
+  const [clientSecret, setClientSecret] = useState("");
+  const stripeOptions = {
+    clientSecret,
+    appearance: {
+      theme: "night",
+      variables: {
+        colorPrimary: "#c9a84c",
+        colorBackground: "#1a1714",
+        colorText: "#f5eee6",
+        colorDanger: "#df1b41",
+        fontFamily: "Playfair Display, system-ui, sans-serif",
+        borderRadius: "8px",
+      },
+      rules: {
+        ".Input": {
+          border: "1px solid rgba(245,238,230,0.15)",
+          boxShadow: "none",
+        },
+        ".Input:focus": {
+          border: "1px solid #c9a84c",
+          boxShadow: "none",
+        },
+        ".AccordionItem": {
+          border: "1px solid rgba(245,238,230,0.15)",
+          boxShadow: "none",
+        },
+      },
+    },
+  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["cart"],
@@ -33,46 +176,59 @@ function CheckoutPage() {
   const itemsToBuy =
     data?.filter((item) => selectItems.includes(item.addedBook.id)) || [];
 
-  const placeOrderMutation = useMutation({
+  const total =
+    itemsToBuy.reduce(
+      (s, i) => s + Math.round(Number(i.addedBook.price) * 100),
+      0,
+    ) / 100;
+  const createPaymentIntentMutation = useMutation({
     mutationFn: async () => {
-      const requests = itemsToBuy.map((item) =>
-        api.post(`/order/order/${item.addedBook.id}`, {
+      const response = await api.post("/order/order", {
+        books: itemsToBuy.map((item) => ({
+          bookId: item.addedBook.id,
           quantity: 1,
-          paymentMethod:
-            paymentMethod === 1
-              ? "card"
-              : paymentMethod === 2
-                ? "upi"
-                : "net_banking",
-        }),
-      );
-      return await Promise.all(requests);
+        })),
+      });
+      console.log("Payment Intent response:", response.data.data);
+      return response.data.data;
     },
-    onSuccess: () => {
-      // TanStack Query v5 requires the object form
-      queryClient.invalidateQueries({ queryKey: ["cart"] });
-      alert("Order Placed Successfully");
-      navigate("/dashboard/reader");
+
+    onSuccess: (data) => {
+      console.log(
+        "Payment Intent created successfully:",
+        data.data.clientSecret,
+      );
+      setClientSecret(data.data.clientSecret);
+      setactiveStep("review");
     },
     onError: (error) => {
-      alert(error.response?.data?.message || "Order creation failed.");
-      console.error("Error placing order:", error);
+      alert(
+        error.response?.data?.message || "Failed to create payment intent.",
+      );
+      console.error("Error creating payment intent:", error);
     },
   });
 
   function calculatePrice(items) {
-    return items.reduce((total, item) => total + item.addedBook.price, 0);
+    return items.reduce(
+      (total, item) => total + Number(item.addedBook.price),
+      0,
+    );
   }
 
   function handleContinue(e) {
     e.preventDefault();
 
-    if (!paymentMethod) {
-      alert("Select Payment method");
-      return;
+    if (itemsToBuy.length === 0) {
+      alert("No books selected.");
+      return <Navigate to="/cart" replace />;
     }
 
-    setactiveStep("review");
+    if (clientSecret && intentFor === cartKey) {
+      setactiveStep("review");
+      return;
+    }
+    createPaymentIntentMutation.mutate();
   }
 
   if (isLoading) {
@@ -111,7 +267,10 @@ function CheckoutPage() {
 
               return (
                 <Fragment key={step.id}>
-                  <div className="flex flex-col items-center gap-2 w-24 sm:w-32 shrink-0">
+                  <div
+                    aria-current={isActive ? "step" : undefined}
+                    className="flex flex-col items-center gap-2 w-24 sm:w-32 shrink-0"
+                  >
                     <div
                       className={`w-8 h-8 rounded-full relative z-10 border-2 flex items-center justify-center text-sm font-semibold transition-all duration-300
                         ${
@@ -149,12 +308,14 @@ function CheckoutPage() {
           <hr className="w-full border-border/40 mb-4 sm:mb-6" />
 
           <div className="flex flex-col items-start gap-1 mb-2 sm:mb-6">
-            <div className="flex flex-col items-center gap-1 sm:gap-2 w-full mb-4">
-              <h2 className="text-base sm:text-lg text-cream">
-                Payment Portal
+            <div className="mb-4 w-full">
+              <h2 className="text-lg text-cream font-playfair">
+                {activeStep === "payment" ? "Your order" : "Payment"}
               </h2>
-              <p className="text-cream-dim text-xs sm:text-sm text-center">
-                Select a payment option
+              <p className="text-sm text-cream-dim">
+                {activeStep === "payment"
+                  ? "Check what you're buying before you pay."
+                  : "Choose a payment method and pay securely."}
               </p>
             </div>
 
@@ -163,191 +324,55 @@ function CheckoutPage() {
                 onSubmit={handleContinue}
                 className="flex flex-col gap-3 sm:gap-4 w-full"
               >
-                {/* CARD ACCORDION */}
-                <div
-                  className={`rounded-xl p-3 sm:p-4 transition-all duration-300 ${paymentMethod === 1 ? "border border-gold bg-gold/5" : "border border-border/30"}`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod(1)}
-                    className="flex items-center justify-between gap-3 w-full"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-5 h-5 shrink-0 rounded-full border border-border/60 flex items-center justify-center">
-                        {paymentMethod === 1 && (
-                          <div className="w-2.5 h-2.5 rounded-full bg-gold" />
-                        )}
-                      </div>
-                      <span className="font-semibold text-cream text-sm sm:text-base text-left">
-                        Credit / Debit Card
-                      </span>
-                    </div>
-                    <CreditCard className="shrink-0" />
-                  </button>
-
-                  {paymentMethod === 1 && (
-                    <div className="mt-4 flex flex-col gap-4 border-t border-border/20 pt-4">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-xs text-cream-dim/75 font-medium">
-                          Card Number
-                        </label>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          autoComplete="cc-number"
-                          className={inputClass}
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                        <div className="flex flex-col gap-1.5 min-w-0">
-                          <label className="text-xs text-cream-dim/75 font-medium">
-                            Expiry Date
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="cc-exp"
-                            placeholder="MM/YY"
-                            className={inputClass}
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1.5 min-w-0">
-                          <label className="text-xs text-cream-dim/75 font-medium">
-                            CVV
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            autoComplete="cc-csc"
-                            placeholder="123"
-                            className={inputClass}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                <div className="rounded-lg border border-border/30 p-4 text-sm text-cream-dim">
+                  {itemsToBuy.length}{" "}
+                  {itemsToBuy.length === 1 ? "book" : "books"}
+                  {itemsToBuy.every(
+                    (i) => i.addedBook.publishType === "ONLINE",
+                  ) &&
+                    " · You'll get instant access in your library once payment is complete."}
                 </div>
-
-                {/* UPI ACCORDION */}
-                <div
-                  className={`rounded-xl p-3 sm:p-4 transition-all duration-300 ${paymentMethod === 2 ? "border border-gold bg-gold/5" : "border border-border/30"}`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod(2)}
-                    className="flex items-center justify-between gap-3 w-full"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-5 h-5 shrink-0 rounded-full border border-border/60 flex items-center justify-center">
-                        {paymentMethod === 2 && (
-                          <div className="w-2.5 h-2.5 rounded-full bg-gold" />
-                        )}
-                      </div>
-                      <div className="flex flex-col items-start text-left">
-                        <span className="font-semibold text-cream text-sm sm:text-base">
-                          UPI
-                        </span>
-                        <span className="text-xs text-cream-dim/60">
-                          Pay using any UPI app
-                        </span>
-                      </div>
-                    </div>
-                    <FaMobileAlt className="shrink-0" />
-                  </button>
-
-                  {paymentMethod === 2 && (
-                    <div className="mt-4 flex flex-col gap-4 border-t border-border/20 pt-4">
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-xs text-cream-dim/75 font-medium">
-                          UPI ID
-                        </label>
-                        <input type="text" className={inputClass} />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer */}
-                <div className="flex items-center gap-3 p-3 bg-bg-primary/30 rounded-lg mt-2 sm:mt-4">
-                  <FaLock className="text-gold shrink-0" />
-                  <div className="flex flex-col items-start gap-1">
-                    <span className="text-cream-dim text-sm">
-                      Secure payment processing
-                    </span>
-                    <span className="text-cream-dim text-xs">
-                      Your payment information is encrypted and is secure
-                    </span>
-                  </div>
-                </div>
-
                 <button
                   type="submit"
-                  className="w-full bg-gold hover:bg-gold-light text-bg-primary py-3 rounded-lg font-semibold flex items-center justify-center gap-2 mt-2"
+                  disabled={createPaymentIntentMutation.isPending}
+                  className="w-full bg-gold hover:bg-gold-light disabled:opacity-50 text-bg-primary py-3 rounded-lg font-semibold"
                 >
-                  Continue to Review ➔
+                  {createPaymentIntentMutation.isPending
+                    ? "Preparing payment…"
+                    : "Continue to payment"}
                 </button>
               </form>
             ) : (
               <div className="flex flex-col gap-4 sm:gap-6 w-full text-cream">
-                <div className="flex flex-col items-start gap-1">
-                  <h2 className="text-base sm:text-lg font-semibold">
-                    Review your details
-                  </h2>
-                  <p className="text-xs text-cream-dim/50">
-                    Please confirm your payment method before completing the
-                    purchase.
-                  </p>
-                </div>
-
-                <div className="bg-bg-primary/20 border border-border/10 p-4 sm:p-5 rounded-xl flex flex-col gap-3 text-sm">
-                  <div className="flex justify-between items-center gap-3 pb-2 border-b border-border/10">
-                    <span className="text-cream-dim/60">Selected Method</span>
-                    <span className="font-semibold text-gold text-right">
-                      {paymentMethod === 1
-                        ? "Credit / Debit Card"
-                        : paymentMethod === 2
-                          ? "UPI"
-                          : "Net Banking"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center gap-3">
-                    <span className="text-cream-dim/60">Items to Purchase</span>
-                    <span className="font-semibold">
-                      {itemsToBuy.length}{" "}
-                      {itemsToBuy.length === 1 ? "book" : "books"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center gap-3">
-                    <span className="text-cream-dim/60">Total Amount</span>
-                    <span className="font-semibold text-gold">
-                      ₹ {calculatePrice(itemsToBuy)}
-                    </span>
-                  </div>
-                </div>
+                {clientSecret && (
+                  <Elements
+                    stripe={stripePromise}
+                    options={stripeOptions}
+                    key={clientSecret}
+                  >
+                    <StripePaymentForm
+                      onProcessing={setPaying}
+                      onSuccess={() => {
+                        setPaid(true);
+                        queryClient.invalidateQueries({ queryKey: ["cart"] });
+                      }}
+                    />
+                  </Elements>
+                )}
 
                 {/* Stack on mobile, primary action on top */}
-                <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 w-full mt-2 sm:mt-4">
-                  <button
-                    type="button"
-                    onClick={() => setactiveStep("payment")}
-                    disabled={placeOrderMutation.isPending}
-                    className="flex-1 border border-gold/40 hover:bg-gold/5 text-gold py-3 rounded-lg font-semibold transition-all duration-300 disabled:opacity-50"
-                  >
-                    Back to Payment
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => placeOrderMutation.mutate()}
-                    disabled={
-                      placeOrderMutation.isPending || itemsToBuy.length === 0
-                    }
-                    className="flex-1 bg-gold hover:bg-gold-light disabled:bg-gold/50 text-bg-primary py-3 rounded-lg font-semibold transition-all duration-300"
-                  >
-                    {placeOrderMutation.isPending
-                      ? "Placing Order..."
-                      : "Confirm & Pay"}
-                  </button>
-                </div>
+                {!paid && (
+                  <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 w-full mt-2 sm:mt-4">
+                    <button
+                      type="button"
+                      onClick={() => setactiveStep("payment")}
+                      disabled={paying}
+                      className="flex-1 border border-gold/40 hover:bg-gold/5 text-gold py-3 rounded-lg font-semibold transition-all duration-300 disabled:opacity-50"
+                    >
+                      Back to Details
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -408,18 +433,14 @@ function CheckoutPage() {
               </span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-cream-dim">Discount</span>
-              <span className="text-sm text-emerald-500">- ₹ 0.0</span>
-            </div>
-            <div className="flex justify-between items-center">
               <span>Shipping</span>
               <span className="text-sm text-emerald-500">Free</span>
             </div>
             <div className="border-t border-border/20 my-2 w-full" />
-            <div className="flex justify-between items-baseline pt-2">
-              <span className="text-base font-medium text-cream">Total</span>
+            <div className="border-t border-border/20 pt-3 w-full flex justify-between items-baseline">
+              <span className="text-cream font-medium">Total</span>
               <span className="text-lg font-semibold text-gold">
-                ₹ {calculatePrice(itemsToBuy)}
+                {formatINR(total)}
               </span>
             </div>
             <p className="text-[10px] text-cream-dim/30 text-right mt-0.5 w-full">

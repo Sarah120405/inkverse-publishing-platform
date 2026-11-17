@@ -5,21 +5,39 @@ import { createAuditLog } from "../../utils/auditLog.js";
 import stripe from "../../config/stripe.config.js";
 import { randomUUID } from "crypto";
 
-const createOnlineOrder = async (book, bookId, userId, body) => {
-  const quantity = Number(body.quantity);
+const createOnlineOrder = async (items, userId) => {
+  if (!Array.isArray(items) || items.length === 0) {
+    return response(400, false, "At least one book is required");
+  }
 
-  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+  const quantities = items.map((item) => Number(item.quantity));
+
+  if (
+    quantities.some(
+      (quantity) => !Number.isSafeInteger(quantity) || quantity <= 0,
+    )
+  ) {
     return response(400, false, "Quantity must be a positive integer");
   }
 
-  if (book.price === null || book.price === undefined) {
+  if (
+    items.some(
+      ({ book }) => !book || book.price === null || book.price === undefined,
+    )
+  ) {
     return response(400, false, "Book price is not configured");
   }
 
-  const totalPrice = new Prisma.Decimal(book.price.toString()).mul(quantity);
+  const totalPrice = items.reduce(
+    (total, item, index) =>
+      total.plus(
+        new Prisma.Decimal(item.book.price.toString()).mul(quantities[index]),
+      ),
+    new Prisma.Decimal(0),
+  );
 
   if (totalPrice.lessThanOrEqualTo(0)) {
-    return response(400, false, "Invalid book price");
+    return response(400, false, "Invalid payment amount");
   }
 
   const amountPaise = totalPrice.mul(100);
@@ -30,7 +48,6 @@ const createOnlineOrder = async (book, bookId, userId, body) => {
   ) {
     return response(400, false, "Invalid payment amount");
   }
-
   // 1. Create a pending transaction in your database.
   const payment = await prisma.transaction.create({
     data: {
@@ -40,6 +57,20 @@ const createOnlineOrder = async (book, bookId, userId, body) => {
       paymentMethod: "Stripe",
       paymentStatus: "Pending",
       currency: "inr",
+      checkoutOrders: {
+        create: items.map((item, index) => ({
+          userId,
+          bookId: item.book.id,
+          quantity: quantities[index],
+          totalPrice: new Prisma.Decimal(item.book.price.toString()).mul(
+            quantities[index],
+          ),
+          paymentStatus: "Pending",
+        })),
+      },
+    },
+    include: {
+      checkoutOrders: true,
     },
   });
 
@@ -55,22 +86,35 @@ const createOnlineOrder = async (book, bookId, userId, body) => {
         metadata: {
           transactionId: payment.transactionId,
           userId,
-          bookId,
-          quantity: String(quantity),
         },
       },
       {
         idempotencyKey: `inkverse_order_${payment.transactionId}`,
       },
     );
+    if (!paymentIntent.client_secret) {
+      throw new Error("Stripe client secret unavailable");
+    }
   } catch (error) {
-    await prisma.transaction.update({
-      where: { id: payment.id },
-      data: {
-        paymentStatus: "Rejected",
-        stripeStatus: "creation_failed",
-      },
-    });
+    await prisma.$transaction([
+      prisma.transaction.update({
+        where: { id: payment.id },
+        data: {
+          paymentStatus: "Rejected",
+          stripeStatus: "creation_failed",
+        },
+      }),
+
+      prisma.purchaseOrder.updateMany({
+        where: {
+          checkoutTransactionId: payment.id,
+          paymentStatus: "Pending",
+        },
+        data: {
+          paymentStatus: "Rejected",
+        },
+      }),
+    ]);
 
     throw error;
   }
@@ -104,7 +148,7 @@ const createOnlineOrder = async (book, bookId, userId, body) => {
 
   // 4. Return the client secret to the frontend.
   if (!paymentIntent.client_secret) {
-    return response(400, false, "Unable to initiate payment", null, null);
+    throw new Error("Stripe client secret unavailable");
   }
 
   return response(
@@ -114,22 +158,42 @@ const createOnlineOrder = async (book, bookId, userId, body) => {
     {
       transaction: updatedPayment,
       clientSecret: paymentIntent.client_secret,
-      book,
+      items: items.map((item, index) => ({
+        book: item.book,
+        quantity: quantities[index],
+      })),
+      totalAmount: totalPrice.toString(),
     },
     null,
   );
 };
 
-const createOrder = async (bookId, userId, body) => {
+const createOrder = async (books, userId) => {
   try {
-    const book = await prisma.book.findUnique({
-      where: { id: bookId },
-    });
-
-    if (!book || !book.isPublished || !book.isActive) {
-      return response(400, false, "Book not found", null, null);
+    if (!Array.isArray(books) || books.length === 0) {
+      return response(400, false, "No books selected", null, null);
     }
 
+    // 2. Validate book IDs and quantities
+    const invalidItem = books.find(
+      (item) =>
+        !item.bookId ||
+        !Number.isInteger(item.quantity ?? 1) ||
+        (item.quantity ?? 1) < 1,
+    );
+
+    if (invalidItem) {
+      return response(400, false, "Invalid book ID or quantity", null, null);
+    }
+
+    // Prevent duplicate book entries in the same order
+    const bookIds = books.map((item) => item.bookId);
+
+    if (new Set(bookIds).size !== bookIds.length) {
+      return response(400, false, "Duplicate books found", null, null);
+    }
+
+    // 3. Find user
     const user = await prisma.user.findUnique({
       where: { id: userId },
     });
@@ -138,28 +202,75 @@ const createOrder = async (bookId, userId, body) => {
       return response(404, false, "User not found", null, null);
     }
 
-    // Only block a previous successful purchase.
+    // 4. Fetch all requested books
+    const existingBooks = await prisma.book.findMany({
+      where: {
+        id: { in: bookIds },
+      },
+    });
+
+    // Check whether all requested books exist
+    if (existingBooks.length !== bookIds.length) {
+      return response(400, false, "One or more books not found", null, null);
+    }
+
+    // Map books by ID for easy lookup
+    const bookMap = new Map(existingBooks.map((book) => [book.id, book]));
+
+    // 5. Validate each book
+    for (const item of books) {
+      const book = bookMap.get(item.bookId);
+
+      if (!book.isPublished || !book.isActive) {
+        return response(400, false, `${book.title} is unavailable`, null, null);
+      }
+
+      if (book.publishType !== "ONLINE" || book.price === null) {
+        return response(
+          400,
+          false,
+          `${book.title} is not available for online purchase`,
+          null,
+          null,
+        );
+      }
+    }
+
+    // 6. Check whether any book was already purchased
     const alreadyOrdered = await prisma.purchaseOrder.findFirst({
       where: {
-        bookId,
         userId,
         paymentStatus: "Paid",
+        bookId: { in: bookIds },
+      },
+      include: {
+        orderBook: {
+          select: { title: true },
+        },
       },
     });
 
     if (alreadyOrdered) {
-      return response(400, false, "Book already purchased", null, null);
+      return response(
+        400,
+        false,
+        `${alreadyOrdered.orderBook.title} already purchased`,
+        null,
+        null,
+      );
     }
 
-    if (book.publishType === "ONLINE") {
-      return await createOnlineOrder(book, bookId, userId, body);
-    }
+    // 7. Prepare items for Stripe checkout
+    const orderItems = books.map((item) => ({
+      book: bookMap.get(item.bookId),
+      quantity: item.quantity ?? 1,
+    }));
+
+    return await createOnlineOrder(orderItems, userId);
 
     /*  if (book.publishType === "OFFLINE") {
       return await createOfflineOrder(book, bookId, userId, body);
     } */
-
-    return response(400, false, "Invalid book type", null, null);
   } catch (error) {
     console.error("Create order error:", error);
     return response(500, false, "Order unsuccessful", null, error);
@@ -167,33 +278,26 @@ const createOrder = async (bookId, userId, body) => {
 };
 
 const completeOnlineOrder = async (paymentIntent) => {
-  const {
-    transactionId,
-    userId,
-    bookId,
-    quantity: quantityString,
-  } = paymentIntent.metadata;
+  const { transactionId, userId } = paymentIntent.metadata;
 
   if (paymentIntent.status !== "succeeded") {
     throw new Error("Payment has not succeeded");
   }
 
-  // 1. Validate Stripe metadata
-  const quantity = Number(quantityString);
-
-  if (
-    !transactionId ||
-    !userId ||
-    !bookId ||
-    !Number.isSafeInteger(quantity) ||
-    quantity <= 0
-  ) {
+  if (!transactionId || !userId) {
     throw new Error("Invalid payment metadata");
   }
 
   // 2. Find the transaction
   const payment = await prisma.transaction.findUnique({
     where: { transactionId },
+    include: {
+      checkoutOrders: {
+        include: {
+          orderBook: true,
+        },
+      },
+    },
   });
 
   if (!payment) {
@@ -209,23 +313,46 @@ const completeOnlineOrder = async (paymentIntent) => {
     throw new Error("Payment verification failed");
   }
 
+  const orders = payment.checkoutOrders;
+
+  if (!orders || orders.length === 0) {
+    throw new Error("No purchase orders found for this transaction");
+  }
   // 4. Validate amount and currency
-  const book = await prisma.book.findUnique({
-    where: { id: bookId },
-  });
+  let expectedAmount = new Prisma.Decimal(0);
+  for (const order of orders) {
+    const book = order.orderBook;
 
-  if (!book || !book.isPublished || !book.isActive) {
-    throw new Error("Book is unavailable");
+    if (
+      order.userId !== userId ||
+      order.paymentStatus !== "Pending" ||
+      !book ||
+      !book.isActive ||
+      book.publishType !== "ONLINE"
+    ) {
+      throw new Error("Invalid or unavailable purchase order");
+    }
+
+    if (
+      !Number.isSafeInteger(order.quantity) ||
+      order.quantity <= 0 ||
+      order.totalPrice.lessThanOrEqualTo(0)
+    ) {
+      throw new Error("Invalid purchase order details");
+    }
+
+    const expectedOrderPrice = new Prisma.Decimal(book.price.toString()).mul(
+      order.quantity,
+    );
+
+    if (!order.totalPrice.equals(expectedOrderPrice)) {
+      throw new Error("Purchase order price validation failed");
+    }
+
+    expectedAmount = expectedAmount.plus(order.totalPrice);
   }
 
-  if (book.publishType !== "ONLINE" || !book.price) {
-    throw new Error("Invalid online book");
-  }
-
-  const expectedAmount = new Prisma.Decimal(book.price.toString()).mul(
-    quantity,
-  );
-
+  // 4. Verify amount and currency
   const expectedPaise = expectedAmount.mul(100);
 
   if (
@@ -259,23 +386,20 @@ const completeOnlineOrder = async (paymentIntent) => {
     }
 
     // 6. Create the paid PurchaseOrder
-    const purchaseOrder = await tx.purchaseOrder.create({
-      data: {
+    const updatedOrders = await tx.purchaseOrder.updateMany({
+      where: {
+        checkoutTransactionId: payment.id,
         userId,
-        bookId,
-        quantity,
-        totalPrice: expectedAmount,
+        paymentStatus: "Pending",
+      },
+      data: {
         paymentStatus: "Paid",
       },
     });
 
-    // 7. Link the PurchaseOrder to the Transaction
-    await tx.transaction.update({
-      where: { id: payment.id },
-      data: {
-        purchaseOrderId: purchaseOrder.id,
-      },
-    });
+    if (updatedOrders.count !== orders.length) {
+      throw new Error("Failed to update all purchase orders");
+    }
 
     const admin = await tx.user.findFirst({
       where: { role: "Admin" },
@@ -298,66 +422,90 @@ const completeOnlineOrder = async (paymentIntent) => {
       throw new Error("Invalid commission rate");
     }
 
-    const commission = expectedAmount.mul(commissionRate);
-    const authorAmount = expectedAmount.minus(commission);
+    const authorEarnings = new Map();
+    let totalCommission = new Prisma.Decimal(0);
 
-    // 9. Find author and admin wallets
+    for (const order of orders) {
+      const authorId = order.orderBook.authorId;
 
-    const authorWallet = await tx.wallet.findUnique({
-      where: { userId: book.authorId },
-    });
+      const commission = order.totalPrice.mul(commissionRate);
+      const authorAmount = order.totalPrice.minus(commission);
 
+      totalCommission = totalCommission.plus(commission);
+
+      const existingAmount =
+        authorEarnings.get(authorId) || new Prisma.Decimal(0);
+
+      authorEarnings.set(authorId, existingAmount.plus(authorAmount));
+
+      // Audit log for each PurchaseOrder
+      await createAuditLog(tx, {
+        userId,
+        action: "ONLINE_ORDER_CREATED",
+        entityType: "PurchaseOrder",
+        entityId: order.id,
+        oldValue: {
+          paymentStatus: "Pending",
+        },
+        newValue: {
+          bookId: order.bookId,
+          quantity: order.quantity,
+          totalPrice: order.totalPrice.toString(),
+          paymentStatus: "Paid",
+        },
+      });
+    }
+
+    // 9. Credit each author's wallet
+    for (const [authorId, authorAmount] of authorEarnings) {
+      const authorWallet = await tx.wallet.findUnique({
+        where: { userId: authorId },
+      });
+
+      if (!authorWallet) {
+        throw new Error(`Wallet not found for author ${authorId}`);
+      }
+
+      const updatedWallet = await tx.wallet.update({
+        where: { userId: authorId },
+        data: {
+          totalBalance: { increment: authorAmount },
+          currentBalance: { increment: authorAmount },
+        },
+      });
+
+      await createAuditLog(tx, {
+        userId: authorId,
+        action: "AUTHOR_WALLET_CREDITED",
+        entityType: "Wallet",
+        entityId: authorWallet.id,
+        oldValue: {
+          totalBalance: authorWallet.totalBalance.toString(),
+          currentBalance: authorWallet.currentBalance.toString(),
+        },
+        newValue: {
+          totalBalance: updatedWallet.totalBalance.toString(),
+          currentBalance: updatedWallet.currentBalance.toString(),
+          amount: authorAmount.toString(),
+          sourceTransactionId: payment.transactionId,
+        },
+      });
+    }
+
+    // 10. Credit Admin's wallet with total commission
     const adminWallet = await tx.wallet.findUnique({
       where: { userId: admin.id },
     });
 
-    if (!authorWallet || !adminWallet) {
-      throw new Error("Wallet not found");
+    if (!adminWallet) {
+      throw new Error("Admin wallet not found");
     }
 
-    await tx.wallet.update({
-      where: { userId: book.authorId },
-      data: {
-        totalBalance: { increment: authorAmount },
-        currentBalance: { increment: authorAmount },
-      },
-    });
-
-    await tx.wallet.update({
+    const updatedAdminWallet = await tx.wallet.update({
       where: { userId: admin.id },
       data: {
-        totalBalance: { increment: commission },
-        currentBalance: { increment: commission },
-      },
-    });
-
-    // 12. Create audit logs
-    await createAuditLog(tx, {
-      userId,
-      action: "ONLINE_ORDER_CREATED",
-      entityType: "PurchaseOrder",
-      entityId: purchaseOrder.id,
-      oldValue: Prisma.JsonNull,
-      newValue: {
-        bookId,
-        quantity,
-        totalPrice: expectedAmount.toString(),
-        paymentStatus: "Paid",
-      },
-    });
-
-    await createAuditLog(tx, {
-      userId,
-      action: "AUTHOR_WALLET_CREDITED",
-      entityType: "Wallet",
-      entityId: authorWallet.id,
-      oldValue: {
-        totalBalance: authorWallet.totalBalance.toString(),
-        currentBalance: authorWallet.currentBalance.toString(),
-      },
-      newValue: {
-        amount: authorAmount.toString(),
-        sourceTransactionId: payment.transactionId,
+        totalBalance: { increment: totalCommission },
+        currentBalance: { increment: totalCommission },
       },
     });
 
@@ -371,24 +519,43 @@ const completeOnlineOrder = async (paymentIntent) => {
         currentBalance: adminWallet.currentBalance.toString(),
       },
       newValue: {
-        amount: commission.toString(),
+        totalBalance: updatedAdminWallet.totalBalance.toString(),
+        currentBalance: updatedAdminWallet.currentBalance.toString(),
+        amount: totalCommission.toString(),
         sourceTransactionId: payment.transactionId,
       },
     });
+
+    // 11. Remove all purchased books from this user's cart
     await tx.cart.deleteMany({
       where: {
         userId,
-        bookId,
+        bookId: {
+          in: orders.map((order) => order.bookId),
+        },
       },
     });
 
     return {
       alreadyProcessed: false,
-      purchaseOrder,
-      authorAmount: authorAmount.toString(),
-      commission: commission.toString(),
+      transactionId: payment.transactionId,
+      purchaseOrders: orders.map((order) => ({
+        ...order,
+        paymentStatus: "Paid",
+      })),
+      totalAmount: expectedAmount.toString(),
+      totalCommission: totalCommission.toString(),
+      authorEarnings: Object.fromEntries(
+        [...authorEarnings].map(([authorId, amount]) => [
+          authorId,
+          amount.toString(),
+        ]),
+      ),
     };
   });
+  if (result.alreadyProcessed) {
+    return response(200, true, "Payment already processed", result, null);
+  }
 
   return response(201, true, "Order successful", result, null);
 };

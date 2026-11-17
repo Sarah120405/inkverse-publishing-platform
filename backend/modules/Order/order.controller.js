@@ -11,7 +11,7 @@ const createOrderController = async (req, res) => {
   if (error) {
     return res.status(400).json({ error: error.details[0].message });
   }
-  const order = await createOrder(req.params.bookId, req.user.id, req.body);
+  const order = await createOrder(req.body.books, req.user.id);
   return res.status(order.status).json(order);
 };
 
