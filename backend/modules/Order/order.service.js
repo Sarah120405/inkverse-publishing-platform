@@ -313,6 +313,23 @@ const completeOnlineOrder = async (paymentIntent) => {
     throw new Error("Payment verification failed");
   }
 
+  if (payment.paymentStatus === "Paid") {
+    return response(
+      200,
+      true,
+      "Payment already processed",
+      {
+        alreadyProcessed: true,
+        transactionId: payment.transactionId,
+      },
+      null,
+    );
+  }
+
+  if (payment.paymentStatus !== "Pending") {
+    throw new Error("Payment is not pending");
+  }
+
   const orders = payment.checkoutOrders;
 
   if (!orders || orders.length === 0) {
@@ -323,13 +340,7 @@ const completeOnlineOrder = async (paymentIntent) => {
   for (const order of orders) {
     const book = order.orderBook;
 
-    if (
-      order.userId !== userId ||
-      order.paymentStatus !== "Pending" ||
-      !book ||
-      !book.isActive ||
-      book.publishType !== "ONLINE"
-    ) {
+    if (order.userId !== userId || order.paymentStatus !== "Pending" || !book) {
       throw new Error("Invalid or unavailable purchase order");
     }
 
@@ -339,14 +350,6 @@ const completeOnlineOrder = async (paymentIntent) => {
       order.totalPrice.lessThanOrEqualTo(0)
     ) {
       throw new Error("Invalid purchase order details");
-    }
-
-    const expectedOrderPrice = new Prisma.Decimal(book.price.toString()).mul(
-      order.quantity,
-    );
-
-    if (!order.totalPrice.equals(expectedOrderPrice)) {
-      throw new Error("Purchase order price validation failed");
     }
 
     expectedAmount = expectedAmount.plus(order.totalPrice);
@@ -359,6 +362,7 @@ const completeOnlineOrder = async (paymentIntent) => {
     !expectedPaise.isInteger() ||
     !Number.isSafeInteger(expectedPaise.toNumber()) ||
     paymentIntent.currency !== "inr" ||
+    paymentIntent.amount !== expectedPaise.toNumber() ||
     paymentIntent.amount_received !== expectedPaise.toNumber() ||
     !payment.amount.equals(expectedAmount)
   ) {

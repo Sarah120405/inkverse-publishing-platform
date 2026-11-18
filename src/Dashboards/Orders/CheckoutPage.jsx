@@ -1,6 +1,11 @@
 import { CreditCard } from "lucide-react";
-import { Fragment, useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Fragment, useState, useEffect, useRef } from "react";
+import {
+  Navigate,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { FaLock, FaMobileAlt } from "react-icons/fa";
 import api from "../../utils/api";
@@ -17,48 +22,157 @@ const formatINR = (n) =>
     n,
   );
 
-function StripePaymentForm() {
+function StripePaymentForm({
+  total,
+  clientSecret,
+  isRedirectReturn,
+  onProcessing,
+  onSuccess,
+}) {
+  const navigate = useNavigate();
   const stripe = useStripe();
   const elements = useElements();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [message, setMessage] = useState("");
   const [paymentSucceeded, setPaymentSucceeded] = useState(false);
+  const [isAwaitingConfirmation, setIsAwaitingConfirmation] = useState(false);
+
+  const successHandledRef = useRef(false);
+  const retrievedSecretRef = useRef("");
+  const onSuccessRef = useRef(onSuccess);
+
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
+
+  useEffect(() => {
+    if (
+      !stripe ||
+      !clientSecret ||
+      !isRedirectReturn ||
+      retrievedSecretRef.current === clientSecret
+    ) {
+      return;
+    }
+
+    retrievedSecretRef.current = clientSecret;
+
+    let isMounted = true;
+
+    const checkPaymentStatus = async () => {
+      const { paymentIntent, error } =
+        await stripe.retrievePaymentIntent(clientSecret);
+
+      if (!isMounted) return;
+
+      if (error) {
+        setMessage(error.message || "Unable to retrieve payment status.");
+        return;
+      }
+
+      switch (paymentIntent?.status) {
+        case "succeeded":
+          setPaymentSucceeded(true);
+
+          if (!successHandledRef.current) {
+            successHandledRef.current = true;
+            onSuccessRef.current?.();
+          }
+          break;
+
+        case "processing":
+          setIsAwaitingConfirmation(true);
+          setMessage(
+            "Your payment is processing. Please wait for confirmation.",
+          );
+          break;
+
+        case "requires_payment_method":
+          setMessage(
+            paymentIntent.last_payment_error?.message ||
+              "Payment was not completed. Please try another payment method.",
+          );
+          break;
+
+        case "requires_action":
+          setMessage("Additional payment authentication is required.");
+          break;
+
+        case "canceled":
+          setMessage("Payment was canceled. Please try again.");
+          break;
+
+        default:
+          setMessage(
+            "Unable to confirm your payment status. Please check your orders.",
+          );
+      }
+    };
+
+    checkPaymentStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [stripe, clientSecret, isRedirectReturn]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!stripe || !elements || isProcessing || paymentSucceeded) return;
+    if (
+      !stripe ||
+      !elements ||
+      isProcessing ||
+      isAwaitingConfirmation ||
+      paymentSucceeded
+    )
+      return;
 
     setIsProcessing(true);
+    onProcessing?.(true);
     setMessage("");
 
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        return_url: window.location.href,
-      },
-      redirect: "if_required",
-    });
+    try {
+      const { error, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: window.location.href,
+        },
+        redirect: "if_required",
+      });
 
-    if (error) {
-      if (error.payment_intent?.status === "succeeded") {
+      const status = error
+        ? error.payment_intent?.status
+        : paymentIntent?.status;
+
+      if (status === "succeeded") {
         setPaymentSucceeded(true);
+        successHandledRef.current = true;
+        onSuccess?.();
+      } else if (status === "requires_payment_method") {
+        setMessage(
+          error?.message ||
+            "Payment failed. Please try another payment method.",
+        );
+      } else if (status === "requires_action") {
+        setMessage(
+          "Your payment requires additional authentication. Please follow the instructions.",
+        );
+      } else if (status === "processing") {
+        setIsAwaitingConfirmation(true);
+        setMessage("Your payment is processing. Please wait for confirmation.");
+      } else if (status === "canceled") {
+        setMessage("Payment was canceled. Please try again.");
+      } else if (error) {
+        setMessage(error.message || "Something went wrong with your payment.");
       } else {
-        setMessage(error.message || "Payment failed.");
+        setMessage("Payment status is being confirmed. Please wait.");
       }
-
+    } finally {
       setIsProcessing(false);
-      return;
+      onProcessing?.(false);
     }
-
-    if (paymentIntent?.status === "succeeded") {
-      setPaymentSucceeded(true);
-    } else {
-      setMessage(`Your payment is processing. We’ll confirm it shortly.`);
-    }
-
-    setIsProcessing(false);
   };
 
   if (paymentSucceeded) {
@@ -79,7 +193,7 @@ function StripePaymentForm() {
 
         <button
           type="button"
-          onClick={() => (window.location.href = "/dashboard/reader")}
+          onClick={() => navigate("/dashboard/reader")}
           className="w-full bg-gold hover:bg-gold-light text-bg-primary py-3 rounded-lg font-semibold"
         >
           Go to My Orders
@@ -105,10 +219,16 @@ function StripePaymentForm() {
 
       <button
         type="submit"
-        disabled={!stripe || !elements || isProcessing}
+        disabled={
+          !stripe ||
+          !elements ||
+          isProcessing ||
+          isAwaitingConfirmation ||
+          paymentSucceeded
+        }
         className="w-full bg-gold hover:bg-gold-light disabled:opacity-50 text-bg-primary py-3 rounded-lg font-semibold"
       >
-        {isProcessing ? "Processing..." : `Pay Now`}
+        {isProcessing ? "Processing..." : `Pay Now (${formatINR(total)})`}
       </button>
       <p className="flex items-center justify-center gap-1.5 text-xs text-cream-dim/60">
         <FaLock className="shrink-0" /> Payments are processed by Stripe. Card
@@ -121,21 +241,42 @@ function StripePaymentForm() {
 function CheckoutPage() {
   const queryClient = useQueryClient();
   const location = useLocation();
-  const selectItems = location.state?.selectedItems || [];
-  if (!selectItems.length) return <Navigate to="/cart" replace />;
+  const selectedFromNavigation = location.state?.selectedItems;
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  const returnedClientSecret = searchParams.get("payment_intent_client_secret");
+  const selectItems = selectedFromNavigation?.length
+    ? selectedFromNavigation
+    : JSON.parse(sessionStorage.getItem("inkverse_checkout_items") || "[]");
+
   const [paid, setPaid] = useState(false);
   const [paying, setPaying] = useState(false);
   const cartKey = [...selectItems].sort().join(",");
   const [intentFor, setIntentFor] = useState("");
 
-  const [activeStep, setactiveStep] = useState("payment");
+  const [activeStep, setactiveStep] = useState(
+    returnedClientSecret ? "review" : "payment",
+  );
   const steps = [
     { id: "payment", number: 1, label: "Details" },
     { id: "review", number: 2, label: "Payment" },
   ];
 
-  const [clientSecret, setClientSecret] = useState("");
+  const [clientSecret, setClientSecret] = useState(returnedClientSecret || "");
+  useEffect(() => {
+    if (selectedFromNavigation?.length) {
+      sessionStorage.setItem(
+        "inkverse_checkout_items",
+        JSON.stringify(selectedFromNavigation),
+      );
+    }
+  }, [selectedFromNavigation]);
+  if (!selectItems.length) {
+    navigate("/cart", { replace: true });
+    return;
+  }
+
   const stripeOptions = {
     clientSecret,
     appearance: {
@@ -209,19 +350,13 @@ function CheckoutPage() {
     },
   });
 
-  function calculatePrice(items) {
-    return items.reduce(
-      (total, item) => total + Number(item.addedBook.price),
-      0,
-    );
-  }
-
   function handleContinue(e) {
     e.preventDefault();
 
     if (itemsToBuy.length === 0) {
       alert("No books selected.");
-      return <Navigate to="/cart" replace />;
+      navigate("/cart", { replace: true });
+      return;
     }
 
     if (clientSecret && intentFor === cartKey) {
@@ -247,7 +382,7 @@ function CheckoutPage() {
     <div className="flex flex-col gap-4 sm:gap-6 w-full min-w-0">
       <div className="flex flex-col gap-2">
         <h1 className="text-lg sm:text-xl text-cream font-playfair">
-          CheckOut
+          Checkout
         </h1>
         <p className="text-sm sm:text-base text-cream-dim">
           Complete your purchase by providing your details and selecting a
@@ -257,9 +392,9 @@ function CheckoutPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 w-full">
         {/* LEFT: payment / review */}
-        <div className="lg:col-span-7 min-w-0 bg-bg-secondary border border-border/40 p-3 sm:p-4 lg:p-6 rounded-lg">
+        <div className="lg:col-span-7 lg:self-start min-w-0 bg-bg-secondary border border-border/40 p-3 sm:p-4 lg:p-6 rounded-lg">
           {/* Stepper */}
-          <div className="flex items-start justify-center w-full mb-6 sm:mb-8">
+          <div className="flex items-start justify-center w-full mb-4">
             {steps.map((step, index) => {
               const isActive = activeStep === step.id;
               const isCompleted =
@@ -284,7 +419,7 @@ function CheckoutPage() {
                       {isCompleted ? "✓" : step.number}
                     </div>
                     <span
-                      className={`text-[10px] sm:text-xs font-medium uppercase tracking-wider text-center leading-tight transition-all duration-300
+                      className={`text-[10px] sm:text-xs font-medium text-center leading-tight transition-all duration-300
                         ${isActive || isCompleted ? "text-cream" : "text-cream-dim/40"}`}
                     >
                       {step.label}
@@ -305,18 +440,32 @@ function CheckoutPage() {
             })}
           </div>
 
-          <hr className="w-full border-border/40 mb-4 sm:mb-6" />
+          <hr className="w-full border-border/40 mb-2 " />
 
           <div className="flex flex-col items-start gap-1 mb-2 sm:mb-6">
-            <div className="mb-4 w-full">
-              <h2 className="text-lg text-cream font-playfair">
-                {activeStep === "payment" ? "Your order" : "Payment"}
-              </h2>
-              <p className="text-sm text-cream-dim">
-                {activeStep === "payment"
-                  ? "Check what you're buying before you pay."
-                  : "Choose a payment method and pay securely."}
-              </p>
+            <div className="mb-4 w-full flex flex-row justify-between items-center">
+              <div>
+                <h2 className="text-lg text-cream font-playfair">
+                  {activeStep === "payment" ? "Your order" : "Payment"}
+                </h2>
+                <p className="text-sm text-cream-dim">
+                  {activeStep === "payment"
+                    ? "Check what you're buying before you pay."
+                    : "Pay securely with stripe."}
+                </p>
+              </div>
+              {!paid && (
+                <div className="flex">
+                  <button
+                    type="button"
+                    onClick={() => setactiveStep("payment")}
+                    disabled={paying}
+                    className="self-start text-sm text-cream-dim hover:text-cream flex-1 py-3 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    Back to details
+                  </button>
+                </div>
+              )}
             </div>
 
             {activeStep === "payment" ? (
@@ -351,27 +500,17 @@ function CheckoutPage() {
                     key={clientSecret}
                   >
                     <StripePaymentForm
+                      total={total}
+                      clientSecret={clientSecret}
+                      isRedirectReturn={Boolean(returnedClientSecret)}
                       onProcessing={setPaying}
                       onSuccess={() => {
                         setPaid(true);
+                        sessionStorage.removeItem("inkverse_checkout_items");
                         queryClient.invalidateQueries({ queryKey: ["cart"] });
                       }}
                     />
                   </Elements>
-                )}
-
-                {/* Stack on mobile, primary action on top */}
-                {!paid && (
-                  <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4 w-full mt-2 sm:mt-4">
-                    <button
-                      type="button"
-                      onClick={() => setactiveStep("payment")}
-                      disabled={paying}
-                      className="flex-1 border border-gold/40 hover:bg-gold/5 text-gold py-3 rounded-lg font-semibold transition-all duration-300 disabled:opacity-50"
-                    >
-                      Back to Details
-                    </button>
-                  </div>
                 )}
               </div>
             )}
@@ -379,12 +518,12 @@ function CheckoutPage() {
         </div>
 
         {/* RIGHT: order summary */}
-        <div className="lg:col-span-5 min-w-0 flex flex-col gap-4 items-start bg-bg-secondary border border-border/40 rounded-lg p-4 sm:p-5 lg:sticky lg:top-6 lg:self-start">
+        <div className="lg:col-span-5 min-w-0 flex flex-col gap-2 items-start bg-bg-secondary border border-border/40 rounded-lg p-4 sm:p-5 lg:sticky lg:top-6 lg:self-start">
           <h3 className="text-base font-semibold text-cream font-playfair tracking-wide mb-2">
             Order Summary
           </h3>
 
-          <div className="flex flex-col gap-4 w-full mb-4">
+          <div className="flex flex-col gap-4 w-full">
             {itemsToBuy.length === 0 && (
               <p className="text-sm text-cream-dim/60">
                 No items selected for checkout.
@@ -417,7 +556,7 @@ function CheckoutPage() {
                   </div>
                 </div>
                 <span className="text-sm font-semibold text-gold whitespace-nowrap shrink-0">
-                  ₹ {item.addedBook.price}
+                  ₹ {formatINR(item.addedBook.price)}
                 </span>
               </div>
             ))}
@@ -429,7 +568,7 @@ function CheckoutPage() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-cream-dim">Subtotal</span>
               <span className="text-sm font-semibold text-gold">
-                ₹ {calculatePrice(itemsToBuy)}
+                ₹ {formatINR(total)}
               </span>
             </div>
             <div className="flex justify-between items-center">
