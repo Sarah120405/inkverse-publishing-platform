@@ -238,7 +238,6 @@ const dashboardService = async (userId) => {
       const totalSpent = orders.reduce((sum, order) => {
         return sum + Prisma.Decimal(order.totalPrice).toNumber(); // Convert Decimal to number before adding
       }, 0);
-      console.log("Total Spent:", totalSpent); // Log the total spent for debugging
 
       const exploredCategories = orders.map(
         (order) => order.orderBook.category,

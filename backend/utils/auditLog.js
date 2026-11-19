@@ -11,14 +11,13 @@ export const createAuditLog = async (
       oldValue: oldValue ?? undefined,
       newValue: newValue ?? undefined,
     };
-    console.log("Creating Audit Log", data);
 
     const log = await tx.auditLog.create({
       data: data,
     });
-    console.log("Audit Log Created:", log);
     return log;
   } catch (error) {
     console.error("Error creating audit log:", error);
+    return error;
   }
 };

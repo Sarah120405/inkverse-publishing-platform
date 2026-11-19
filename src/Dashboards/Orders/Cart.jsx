@@ -164,7 +164,7 @@ function Cart() {
       selectedItems.includes(item.addedBook.id),
     );
 
-    const price = selectedId.map((item) => item?.addedBook?.price || 0);
+    const price = selectedId.map((item) => Number(item?.addedBook?.price) || 0);
     /* console.log(price);
      */ const totalPrice = price.reduce((sum = 0, price) => sum + price, 0);
     return totalPrice;

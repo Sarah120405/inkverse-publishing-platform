@@ -1,10 +1,7 @@
-import {
-  createOrder,
-  getMyOrder,
-  completeOnlineOrder,
-} from "./order.service.js";
+import { createOrder, getMyOrder } from "./order.service.js";
 import { OrderSchema } from "./order.validator.js";
 import stripe from "../../config/stripe.config.js";
+import completeOrder from "./Payment/completeOrder.service.js";
 
 const createOrderController = async (req, res) => {
   const { error } = OrderSchema.validate(req.body);
@@ -35,7 +32,7 @@ const stripeWebhookController = async (req, res) => {
     if (event.type === "payment_intent.succeeded") {
       const paymentIntent = event.data.object;
 
-      await completeOnlineOrder(paymentIntent);
+      await completeOrder(paymentIntent, event);
     }
 
     return res.status(200).json({ received: true });
