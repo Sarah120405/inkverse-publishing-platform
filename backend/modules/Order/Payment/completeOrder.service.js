@@ -11,6 +11,7 @@ import {
   markWebhookEventFailed,
   markWebhookEventIgnored,
 } from "./webhookEvent.service.js";
+import fulfillSuccessfulPayment from "./paymentFulfilled.service.js";
 
 const completeOrder = async (paymentIntent, event) => {
   let eventClaimed = false;
@@ -46,7 +47,7 @@ const completeOrder = async (paymentIntent, event) => {
 
       return response(200, true, "Webhook event ignored", null, null);
     }
-
+    /* 
     // 3. Verify PaymentIntent.
     const { transactionId, userId } = paymentIntent.metadata;
 
@@ -231,7 +232,9 @@ const completeOrder = async (paymentIntent, event) => {
           ]),
         ),
       };
-    });
+    }); */
+
+    const result = await fulfillSuccessfulPayment(paymentIntent);
 
     // 9. If another request completed the transaction first.
     if (result.alreadyProcessed) {
