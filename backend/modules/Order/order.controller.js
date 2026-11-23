@@ -2,13 +2,20 @@ import { createOrder, getMyOrder } from "./order.service.js";
 import { OrderSchema } from "./order.validator.js";
 import stripe from "../../config/stripe.config.js";
 import completeOrder from "./Payment/completeOrder.service.js";
-
+import { getSavedPaymentMethods } from "./Payment/stripeCustomer.service.js";
 const createOrderController = async (req, res) => {
-  const { error } = OrderSchema.validate(req.body);
+  const { error, value } = OrderSchema.validate(req.body);
   if (error) {
     return res.status(400).json({ error: error.details[0].message });
   }
-  const order = await createOrder(req.body.books, req.user.id);
+  console.log("SAVE PAYMENT", value.savePaymentMethod);
+
+  const order = await createOrder(
+    req.body.books,
+    req.user.id,
+    value.savePaymentMethod,
+    value.paymentMethodId,
+  );
   return res.status(order.status).json(order);
 };
 
@@ -47,4 +54,18 @@ const getMyOrderController = async (req, res) => {
   return res.status(myOrder.status).json(myOrder);
 };
 
-export { createOrderController, getMyOrderController, stripeWebhookController };
+const getSavedPaymentMethodsController = async (req, res) => {
+  const paymentMethods = await getSavedPaymentMethods(req.user.id);
+  return res.status(200).json({
+    status: 200,
+    success: true,
+    data: paymentMethods,
+  });
+};
+
+export {
+  createOrderController,
+  getMyOrderController,
+  getSavedPaymentMethodsController,
+  stripeWebhookController,
+};

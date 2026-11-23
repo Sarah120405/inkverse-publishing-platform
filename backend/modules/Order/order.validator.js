@@ -10,7 +10,17 @@ const OrderSchema = Joi.object({
     )
     .min(1)
     .required(),
-});
+  savePaymentMethod: Joi.boolean().default(false),
+  paymentMethodId: Joi.string()
+    .pattern(/^pm_[A-Za-z0-9]+$/)
+    .optional(),
+}).custom((value, helpers) => {
+  if (value.paymentMethodId && value.savePaymentMethod) {
+    return helpers.error("any.invalid");
+  }
+
+  return value;
+}, "Payment method validation");
 
 /* const OrderSchema = Joi.object({
     quantity: Joi.number().min(1).optional(),

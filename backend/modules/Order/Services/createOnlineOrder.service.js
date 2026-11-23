@@ -4,8 +4,14 @@ import response from "../../../utils/response.js";
 import { createAuditLog } from "../../../utils/auditLog.js";
 import stripe from "../../../config/stripe.config.js";
 import { randomUUID } from "crypto";
+import { getOrCreateStripeCustomer } from "../Payment/stripeCustomer.service.js";
 
-const createOnlineOrder = async (items, userId) => {
+const createOnlineOrder = async (
+  items,
+  userId,
+  savePaymentMethod = false,
+  paymentMethodId = null,
+) => {
   if (!Array.isArray(items) || items.length === 0) {
     return response(400, false, "At least one book is required");
   }
@@ -78,11 +84,39 @@ const createOnlineOrder = async (items, userId) => {
   let paymentIntent;
 
   try {
+    const customer = await getOrCreateStripeCustomer(userId);
+
+    let savedPaymentMethod = null;
+
+    if (paymentMethodId) {
+      savedPaymentMethod =
+        await stripe.paymentMethods.retrieve(paymentMethodId);
+      const paymentMethodCustomerId =
+        typeof savedPaymentMethod.customer === "string"
+          ? savedPaymentMethod.customer
+          : savedPaymentMethod.customer?.id;
+
+      if (
+        paymentMethodCustomerId !== customer.id ||
+        savedPaymentMethod.type !== "card"
+      ) {
+        throw new Error("Invalid payment method for this customer");
+      }
+    }
+
     paymentIntent = await stripe.paymentIntents.create(
       {
         amount: amountPaise.toNumber(),
         currency: "inr",
+        customer: customer.id,
         automatic_payment_methods: { enabled: true },
+        ...(savedPaymentMethod
+          ? {
+              payment_method: savedPaymentMethod.id,
+            }
+          : {
+              setup_future_usage: savePaymentMethod ? "off_session" : undefined,
+            }),
         metadata: {
           transactionId: payment.transactionId,
           userId,
@@ -145,11 +179,6 @@ const createOnlineOrder = async (items, userId) => {
 
     return updated;
   });
-
-  // 4. Return the client secret to the frontend.
-  if (!paymentIntent.client_secret) {
-    throw new Error("Stripe client secret unavailable");
-  }
 
   return response(
     200,

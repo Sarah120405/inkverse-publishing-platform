@@ -32,6 +32,8 @@ model User {
   reviews          Review[]
   readingProgress  ReadingProgress[]
   auditLog         AuditLog[]
+
+  stripeCustomerId String?           @unique
 }
 
 model Token {

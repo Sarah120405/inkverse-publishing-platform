@@ -95,7 +95,6 @@ testReconciliation()
     const { default: prisma } = await import("../../../../config/db.config.js");
     await prisma.$disconnect();
   });
- */
 import stripe from "../../../../config/db.config.js";
 import fulfillSuccessfulPayment from "../paymentFulfilled.service.js";
 
@@ -122,3 +121,99 @@ const runTest = async () => {
 };
 
 runTest();
+
+ */
+
+import prisma from "../../../../config/db.config.js";
+import stripe from "../../../../config/stripe.config.js";
+import { getOrCreateStripeCustomer } from "../stripeCustomer.service.js";
+
+const userId = "cmwovn2430001upck1bbdhj6v";
+
+/* const test = async () => {
+  try {
+    const customer = await getOrCreateStripeCustomer(userId);
+
+    console.log("\n--- First call ---");
+    console.log({
+      customerId: customer.id,
+      email: customer.email,
+      name: customer.name,
+    });
+
+    const secondCustomer = await getOrCreateStripeCustomer(userId);
+
+    console.log("\n--- Second call ---");
+    console.log({
+      customerId: secondCustomer.id,
+      sameCustomer: customer.id === secondCustomer.id,
+    });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { stripeCustomerId: true },
+    });
+
+    console.log("\n--- Database verification ---");
+    console.log({
+      savedCustomerId: user?.stripeCustomerId,
+      matchesStripe: user?.stripeCustomerId === customer.id,
+    });
+  } catch (error) {
+    console.error("Test failed:", error.message);
+  } finally {
+    await prisma.$disconnect();
+  }
+};
+
+test(); */
+const testConcurrentCreation = async () => {
+  try {
+    const results = await Promise.allSettled([
+      getOrCreateStripeCustomer(userId),
+      getOrCreateStripeCustomer(userId),
+    ]);
+
+    console.log("\n--- Concurrent calls ---");
+
+    results.forEach((result, index) => {
+      console.log(`Request ${index + 1}:`);
+
+      if (result.status === "fulfilled") {
+        console.log({
+          status: result.status,
+          customerId: result.value.id,
+        });
+      } else {
+        console.log({
+          status: result.status,
+          error: result.reason.message,
+        });
+      }
+    });
+
+    const successful = results.filter(
+      (result) => result.status === "fulfilled",
+    );
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { stripeCustomerId: true },
+    });
+
+    console.log("\n--- Database verification ---");
+    console.log({
+      savedCustomerId: user?.stripeCustomerId,
+      bothRequestsSucceeded: successful.length === 2,
+      sameCustomer:
+        successful.length === 2 &&
+        successful[0].value.id === successful[1].value.id,
+    });
+  } catch (error) {
+    console.error("Test failed:", error.message);
+  } finally {
+    await prisma.$disconnect();
+  }
+};
+
+testConcurrentCreation();

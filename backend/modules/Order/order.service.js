@@ -6,7 +6,12 @@ import stripe from "../../config/stripe.config.js";
 import { randomUUID } from "crypto"; */
 import createOnlineOrder from "./Services/createOnlineOrder.service.js";
 
-const createOrder = async (books, userId) => {
+const createOrder = async (
+  books,
+  userId,
+  savePaymentMethod = false,
+  paymentMethodId = null,
+) => {
   try {
     if (!Array.isArray(books) || books.length === 0) {
       return response(400, false, "No books selected", null, null);
@@ -104,7 +109,12 @@ const createOrder = async (books, userId) => {
       quantity: item.quantity ?? 1,
     }));
 
-    return await createOnlineOrder(orderItems, userId);
+    return await createOnlineOrder(
+      orderItems,
+      userId,
+      savePaymentMethod,
+      paymentMethodId,
+    );
 
     /*  if (book.publishType === "OFFLINE") {
       return await createOfflineOrder(book, bookId, userId, body);

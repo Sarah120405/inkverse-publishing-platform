@@ -5,6 +5,7 @@ import cors from "cors";
 import { stripeWebhookController } from "./modules/Order/order.controller.js";
 import {
   getReconcilicationCandidates,
+  processReconciliationResults,
   retrieveCandidatePaymentIntents,
 } from "./modules/Order/Payment/reconciliation/reconciliation.service.js";
 
@@ -29,7 +30,7 @@ app.listen(3000, () => {
   console.log("Server is running on port 3000");
 });
 
-const candidates = await getReconcilicationCandidates();
+/* const candidates = await getReconcilicationCandidates();
 
 console.log(
   candidates.map((transaction) => ({
@@ -52,6 +53,10 @@ console.log(
     stripeCurrency: paymentIntent?.currency ?? null,
     error: retrievalError?.message ?? null,
   })),
-);
+); */
+
+const reconciliationResults = await processReconciliationResults();
+
+console.log("Reconciliation Results", reconciliationResults);
 
 export default app;
