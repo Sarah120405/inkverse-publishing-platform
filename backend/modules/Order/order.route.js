@@ -1,6 +1,7 @@
 import express from "express";
 import {
   createOrderController,
+  createSetupIntentController,
   getMyOrderController,
   getSavedPaymentMethodsController,
 } from "./order.controller.js";
@@ -20,5 +21,9 @@ route.get(
   getSavedPaymentMethodsController,
 );
 route.post("/order", authorize(["Reader", "Author"]), createOrderController);
-
+route.post(
+  "/create_setup_intent",
+  authorize(["Reader", "Author"]),
+  createSetupIntentController,
+);
 export default route;

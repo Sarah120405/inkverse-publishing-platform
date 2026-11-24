@@ -2,7 +2,10 @@ import { createOrder, getMyOrder } from "./order.service.js";
 import { OrderSchema } from "./order.validator.js";
 import stripe from "../../config/stripe.config.js";
 import completeOrder from "./Payment/completeOrder.service.js";
-import { getSavedPaymentMethods } from "./Payment/stripeCustomer.service.js";
+import {
+  createSetupIntent,
+  getSavedPaymentMethods,
+} from "./Payment/stripeCustomer.service.js";
 const createOrderController = async (req, res) => {
   const { error, value } = OrderSchema.validate(req.body);
   if (error) {
@@ -63,9 +66,29 @@ const getSavedPaymentMethodsController = async (req, res) => {
   });
 };
 
+const createSetupIntentController = async (req, res) => {
+  try {
+    const setupIntent = await createSetupIntent(req.user.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "SetupIntent created successfully",
+      data: setupIntent,
+    });
+  } catch (error) {
+    console.error("SetupIntent creation failed:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to initialize card setup",
+    });
+  }
+};
+
 export {
   createOrderController,
   getMyOrderController,
   getSavedPaymentMethodsController,
   stripeWebhookController,
+  createSetupIntentController,
 };

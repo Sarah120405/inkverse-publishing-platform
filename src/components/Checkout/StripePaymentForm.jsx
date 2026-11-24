@@ -7,7 +7,6 @@ import {
 } from "@stripe/react-stripe-js";
 import { FaLock } from "react-icons/fa";
 import { formatINR } from "../../utils/format";
-import SavedPaymentMethods from "./SavedPaymentMethods";
 
 function StripePaymentForm({
   total,
@@ -15,10 +14,7 @@ function StripePaymentForm({
   isRedirectReturn,
   onProcessing,
   onSuccess,
-  savedPaymentMethods = [],
   selectedPaymentMethodId,
-  onSelectSavedPaymentMethod,
-  loadingSavedMethods,
 }) {
   const navigate = useNavigate();
   const stripe = useStripe();
@@ -123,25 +119,32 @@ function StripePaymentForm({
 
     if (
       !stripe ||
-      !elements ||
+      (!selectedPaymentMethodId && !elements) ||
       isProcessing ||
       isAwaitingConfirmation ||
       paymentSucceeded
-    )
+    ) {
       return;
+    }
 
     setIsProcessing(true);
     onProcessing?.(true);
     setMessage("");
 
     try {
-      const { error, paymentIntent } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: window.location.href,
-        },
-        redirect: "if_required",
-      });
+      let result = null;
+      if (selectedPaymentMethodId) {
+        result = await stripe.confirmCardPayment(clientSecret);
+      } else {
+        result = await stripe.confirmPayment({
+          elements,
+          confirmParams: {
+            return_url: window.location.href,
+          },
+          redirect: "if_required",
+        });
+      }
+      const { error, paymentIntent } = result;
 
       const status = error
         ? error.payment_intent?.status
@@ -211,12 +214,6 @@ function StripePaymentForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <SavedPaymentMethods
-        savedPaymentMethods={savedPaymentMethods}
-        selectedPaymentMethodId={selectedPaymentMethodId}
-        onSelect={onSelectSavedPaymentMethod}
-        loading={loadingSavedMethods}
-      />
       {!selectedPaymentMethodId && (
         <PaymentElement
           options={{
@@ -236,7 +233,7 @@ function StripePaymentForm({
         type="submit"
         disabled={
           !stripe ||
-          !elements ||
+          (!selectedPaymentMethodId && !elements) ||
           isProcessing ||
           isAwaitingConfirmation ||
           paymentSucceeded

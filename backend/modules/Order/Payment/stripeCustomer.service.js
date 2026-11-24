@@ -94,5 +94,36 @@ const getSavedPaymentMethods = async (userId) => {
     expiryYear: method.card.exp_year,
   }));
 };
-export { getOrCreateStripeCustomer, getSavedPaymentMethods };
-export default { getOrCreateStripeCustomer, getSavedPaymentMethods };
+
+const createSetupIntent = async (userId) => {
+  if (!userId) {
+    throw new Error("User ID is required");
+  }
+  const customer = await getOrCreateStripeCustomer(userId);
+  const setupIntents = await stripe.setupIntents.create({
+    customer: customer.id,
+    usage: "off_session",
+    automatic_payment_methods: {
+      enabled: true,
+    },
+    metadata: {
+      userId,
+    },
+  });
+
+  if (!setupIntents.client_secret) {
+    throw new Error("SetupIntent client secret unavailable");
+  }
+
+  return {
+    setupIntentId: setupIntents.id,
+    clientSecret: setupIntents.client_secret,
+    status: setupIntents.status,
+  };
+};
+export { getOrCreateStripeCustomer, getSavedPaymentMethods, createSetupIntent };
+export default {
+  getOrCreateStripeCustomer,
+  getSavedPaymentMethods,
+  createSetupIntent,
+};

@@ -8,6 +8,7 @@ import { stripeOptions } from "../../utils/options";
 import { StripePaymentForm } from "../../components/Checkout/StripePaymentForm";
 import OrderSummary from "../../components/Checkout/OrderSummary";
 import Stepper from "../../CommonComponents/Stepper";
+import SavedPaymentMethods from "../../components/Checkout/SavedPaymentMethods";
 
 function CheckoutPage() {
   const queryClient = useQueryClient();
@@ -26,10 +27,21 @@ function CheckoutPage() {
   const [savePaymentMethod, setSavePaymentMethod] = useState(false);
   const [savedPaymentMethods, setSavedPaymentMethods] = useState([]);
   const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState(null);
-  const [loadingSavedMethod, setLoadingSavedMethod] = useState(false);
+  const [loadingSavedMethod, setLoadingSavedMethod] = useState(true);
   const cartKey = [...selectItems].sort().join(",");
+
+  const paymentConfigKey = [
+    cartKey,
+    selectedPaymentMethodId || "new-card",
+    selectedPaymentMethodId
+      ? "no-save"
+      : savePaymentMethod
+        ? "save"
+        : "no-save",
+  ].join("|");
+
   const [intentFor, setIntentFor] = useState(
-    returnedClientSecret ? cartKey : "",
+    returnedClientSecret ? "redirect-return" : "",
   );
 
   const [activeStep, setactiveStep] = useState(
@@ -90,26 +102,28 @@ function CheckoutPage() {
       0,
     ) / 100;
   const createPaymentIntentMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (configuration) => {
       const response = await api.post("/order/order", {
         books: itemsToBuy.map((item) => ({
           bookId: item.addedBook.id,
           quantity: 1,
         })),
-        savePaymentMethod: selectedPaymentMethodId ? false : savePaymentMethod,
-        paymentMethodId: selectedPaymentMethodId || undefined,
+        savePaymentMethod: configuration.paymentMethodId
+          ? false
+          : configuration.savePaymentMethod,
+        paymentMethodId: configuration.paymentMethodId || undefined,
       });
       console.log("Payment Intent response:", response.data.data);
       return response.data.data;
     },
 
-    onSuccess: (data) => {
+    onSuccess: (data, configuration) => {
       console.log(
         "Payment Intent created successfully:",
         data.data.clientSecret,
       );
       setClientSecret(data.data.clientSecret);
-      setIntentFor(cartKey);
+      setIntentFor(configuration.configKey);
       setactiveStep("review");
     },
     onError: (error) => {
@@ -133,11 +147,15 @@ function CheckoutPage() {
       return;
     }
 
-    if (clientSecret && intentFor === cartKey) {
+    if (clientSecret && intentFor === paymentConfigKey) {
       setactiveStep("review");
       return;
     }
-    createPaymentIntentMutation.mutate();
+    createPaymentIntentMutation.mutate({
+      paymentMethodId: selectedPaymentMethodId,
+      savePaymentMethod,
+      configKey: paymentConfigKey,
+    });
   }
 
   if (isLoading) {
@@ -211,28 +229,38 @@ function CheckoutPage() {
                   ) &&
                     " · You'll get instant access in your library once payment is complete."}
                 </div>
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-border/30 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={savePaymentMethod}
-                    onChange={(e) => setSavePaymentMethod(e.target.checked)}
-                    className="mt-1 accent-gold"
-                  />
+                <SavedPaymentMethods
+                  savedPaymentMethods={savedPaymentMethods}
+                  selectedPaymentMethodId={selectedPaymentMethodId}
+                  onSelect={setSelectedPaymentMethodId}
+                  loading={loadingSavedMethod}
+                />
+                {!selectedPaymentMethodId && (
+                  <label className="flex items-start gap-3 p-3 rounded-lg border border-border/30 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={savePaymentMethod}
+                      onChange={(e) => setSavePaymentMethod(e.target.checked)}
+                      className="mt-1 accent-gold"
+                    />
 
-                  <span className="flex flex-col gap-1">
-                    <span className="text-sm font-medium text-cream">
-                      Save my card for future purchases
-                    </span>
+                    <span className="flex flex-col gap-1">
+                      <span className="text-sm font-medium text-cream">
+                        Save my card for future purchases
+                      </span>
 
-                    <span className="text-xs text-cream-dim">
-                      Securely save your eligible payment method with Stripe.
-                      You can manage saved payment methods later.
+                      <span className="text-xs text-cream-dim">
+                        Securely save your eligible payment method with Stripe.
+                        You can manage saved payment methods later.
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                )}
                 <button
                   type="submit"
-                  disabled={createPaymentIntentMutation.isPending}
+                  disabled={
+                    createPaymentIntentMutation.isPending || loadingSavedMethod
+                  }
                   className="w-full bg-gold hover:bg-gold-light disabled:opacity-50 text-bg-primary py-3 rounded-lg font-semibold"
                 >
                   {createPaymentIntentMutation.isPending
@@ -258,10 +286,7 @@ function CheckoutPage() {
                         sessionStorage.removeItem("inkverse_checkout_items");
                         queryClient.invalidateQueries({ queryKey: ["cart"] });
                       }}
-                      savedPaymentMethods={savedPaymentMethods}
                       selectedPaymentMethodId={selectedPaymentMethodId}
-                      onSelectSavedPaymentMethod={setSelectedPaymentMethodId}
-                      loadingSavedMethods={loadingSavedMethod}
                     />
                   </Elements>
                 )}
