@@ -32,6 +32,7 @@ model User {
   reviews          Review[]
   readingProgress  ReadingProgress[]
   auditLog         AuditLog[]
+  pushSubscription PushSubscription[]
 
   stripeCustomerId String?           @unique
 }
@@ -250,6 +251,22 @@ model AuditLog {
 
   @@index([userId, createdAt])
 }
+
+
+model PushSubscription {
+  id                  String   @id @default(cuid())
+  userId              String
+  endpoint            String   @unique
+  p256dh              String
+  auth                String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
 
 enum ReadingStatus{
   NotStarted

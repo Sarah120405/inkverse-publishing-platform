@@ -166,6 +166,8 @@ const fulfillSuccessfulPayment = async (paymentIntent) => {
     return {
       alreadyProcessed: false,
       transactionId: payment.transactionId,
+      userId,
+      currency: "INR",
       purchaseOrders: orders.map((order) => ({
         ...order,
         paymentStatus: "Paid",

@@ -12,6 +12,10 @@ import {
 import { Table } from "../../CommonComponents/Table";
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import {
+  requestNotificationPermission,
+  showNotification,
+} from "../../utils/browserNotification";
 
 function Cart() {
   const [selectedItems, setSelectedItems] = useState([]);
@@ -169,12 +173,22 @@ function Cart() {
      */ const totalPrice = price.reduce((sum = 0, price) => sum + price, 0);
     return totalPrice;
   };
+
+  const testNotification = async () => {
+    const granted = await requestNotificationPermission();
+
+    if (granted) {
+      showNotification("Inkverse", {
+        body: "your notification system is working!",
+      });
+    }
+  };
   return (
     <div className="flex flex-col items-center justify-center gap-6">
+      <button onClick={testNotification}>Test</button>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full">
         <div className="lg:col-span-8  bg-bg-secondary border border-border/40 p-4 rounded-md">
           {/* Cart Items Display */}
-          {/* {console.log(data)} */}
           {data?.length > 0 ? (
             <>
               <Table

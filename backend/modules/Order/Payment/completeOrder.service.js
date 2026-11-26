@@ -12,6 +12,7 @@ import {
   markWebhookEventIgnored,
 } from "./webhookEvent.service.js";
 import fulfillSuccessfulPayment from "./paymentFulfilled.service.js";
+import { publishedOrderCompleted } from "../../../events/producer/order.producer.js";
 
 const completeOrder = async (paymentIntent, event) => {
   let eventClaimed = false;
@@ -245,6 +246,8 @@ const completeOrder = async (paymentIntent, event) => {
 
     // 10. Mark event processed only after the DB transaction commits.
     await markWebhookEventProcessed(event.id);
+
+    publishedOrderCompleted(result);
 
     return response(201, true, "Order successful", result, null);
   } catch (error) {

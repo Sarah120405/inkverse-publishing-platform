@@ -8,7 +8,7 @@ import {
   processReconciliationResults,
   retrieveCandidatePaymentIntents,
 } from "./modules/Order/Payment/reconciliation/reconciliation.service.js";
-
+import "./events/consumer/order.consumer.js";
 dotenv.config();
 if (!process.env.STRIPE_SECRET_KEY) {
   throw new Error("STRIPE_SECRET_KEY is missing");

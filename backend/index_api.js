@@ -8,17 +8,17 @@ import vendorRoute from "./modules/Vendor/vendor.route.js";
 import payoutRoute from "./modules/Payout/payout.route.js";
 import settingRoute from "./modules/Setting/setting.route.js";
 import twoFactorAuthRoute from "./modules/TwoFactor/twoFactor.route.js";
-
+import notificationRoute from "./modules/Notification/notification.route.js";
 const route = express.Router();
 
-route.use('/auth', authRoute);
-route.use('/user', userRoute);
-route.use('/book', bookRoute);
-route.use('/order', purchaseRoute);
-route.use('/cart', cartRoute);
-route.use('/vendor', vendorRoute);
-route.use('/payout', payoutRoute);
-route.use('/setting', settingRoute);
-route.use('/twoFactorAuth', twoFactorAuthRoute);
-
+route.use("/auth", authRoute);
+route.use("/user", userRoute);
+route.use("/book", bookRoute);
+route.use("/order", purchaseRoute);
+route.use("/cart", cartRoute);
+route.use("/vendor", vendorRoute);
+route.use("/payout", payoutRoute);
+route.use("/setting", settingRoute);
+route.use("/twoFactorAuth", twoFactorAuthRoute);
+route.use("/notifications", notificationRoute);
 export default route;
