@@ -7,6 +7,7 @@ import { Logo } from "../CommonComponents/logo";
 import {
   createPushSubscription,
   getPushRegistration,
+  registerPushSubscription,
 } from "../utils/pushNotification";
 
 function LoginForm({ closeModal }) {
@@ -92,14 +93,6 @@ function LoginForm({ closeModal }) {
       alert("Login failed");
     }
   }
-  const testPushSubscription = async () => {
-    try {
-      const subscription = await createPushSubscription();
-      console.log(subscription.toJSON());
-    } catch (error) {
-      console.error("Subscription failed:", error);
-    }
-  };
 
   function handleChange(e) {
     setLoginData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -121,8 +114,6 @@ function LoginForm({ closeModal }) {
             <FaTimes />
           </button>
         </header>
-        <button onClick={testPushSubscription}>Test Push Registration</button>
-
         {/* Form */}
         <form
           className="bg-bg-secondary flex flex-col gap-4 p-8"

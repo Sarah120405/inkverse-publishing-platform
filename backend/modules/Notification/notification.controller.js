@@ -1,4 +1,7 @@
-import savePushSubscription from "./notification.service.js";
+import {
+  savePushSubscription,
+  sendPushNotification,
+} from "./notification.service.js";
 
 const savePushSubscriptionController = async (req, res) => {
   try {
@@ -32,4 +35,22 @@ const savePushSubscriptionController = async (req, res) => {
   }
 };
 
-export { savePushSubscriptionController };
+const sendPushNotificationController = async (req, res) => {
+  try {
+    const result = await sendPushNotification(req.user.id, req.body);
+    return res.status(201).json({
+      success: true,
+      message: "Push notification processing completed",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Save push subscription error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to send push subscription",
+    });
+  }
+};
+
+export { savePushSubscriptionController, sendPushNotificationController };

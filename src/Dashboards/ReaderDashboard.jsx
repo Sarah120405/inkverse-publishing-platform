@@ -18,6 +18,7 @@ import { Table } from "../CommonComponents/Table";
 import { useQuery } from "@tanstack/react-query";
 import api from "../utils/api";
 import { useState } from "react";
+import { registerPushSubscription } from "../utils/pushNotification";
 
 const bookTableColumns = [
   {
@@ -137,9 +138,23 @@ function ReaderDashboard() {
     if (level <= 8) return "Bibliophile";
     return "Literary Master";
   };
+  const enableNotifications = async () => {
+    try {
+      const result = await registerPushSubscription();
+
+      console.log("Notification: ", result.message);
+    } catch (error) {
+      console.error(
+        "Notification registration failed:",
+        error.response?.data || error.message,
+      );
+    }
+  };
 
   return (
     <>
+      <button onClick={enableNotifications}>Enable Notifications</button>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <MetricCard
           title="Books in Library"

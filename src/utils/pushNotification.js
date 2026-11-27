@@ -1,3 +1,4 @@
+import api from "./api";
 import { urlBase64ToUint8Array } from "./format";
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
@@ -39,4 +40,15 @@ export const createPushSubscription = async () => {
   console.log("Push Subscription:", subscription);
 
   return subscription;
+};
+
+export const registerPushSubscription = async () => {
+  const subscription = await createPushSubscription();
+
+  const response = await api.post(
+    "/notifications/push_subscription",
+    subscription.toJSON(),
+  );
+
+  return response.data;
 };

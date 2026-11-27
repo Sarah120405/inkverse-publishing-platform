@@ -1,10 +1,4 @@
-import { Prisma } from "@prisma/client";
-import prisma from "../../../config/db.config.js";
 import response from "../../../utils/response.js";
-import { createAuditLog } from "../../../utils/auditLog.js";
-
-import creditWallets from "./walletCredit.service.js";
-
 import {
   claimWebhookEvent,
   markWebhookEventProcessed,
